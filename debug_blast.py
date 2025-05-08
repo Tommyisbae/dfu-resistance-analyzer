@@ -43,7 +43,8 @@ def debug_blast(fasta_file, db_path, output_file, card_tsv):
         "-max_target_seqs", "100"
     ]
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        logger.info(f"Running BLAST for {fasta_path}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
         if os.path.exists(output_file):
             hit_count = sum(1 for _ in open(output_file))
             logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
@@ -58,6 +59,8 @@ def debug_blast(fasta_file, db_path, output_file, card_tsv):
             df.to_csv(output_file.replace(".txt", "_args.csv"), index=False)
         else:
             logger.error("BLAST output file not created")
+    except subprocess.TimeoutExpired:
+        logger.error("BLAST timed out after 1 hour")
     except subprocess.CalledProcessError as e:
         logger.error(f"BLAST failed: {e.stderr}")
 

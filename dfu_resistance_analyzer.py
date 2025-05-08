@@ -5,7 +5,6 @@ import pandas as pd
 import plotly.express as px
 from Bio import SeqIO
 import logging
-import signal
 
 # Setup logging
 logging.basicConfig(
@@ -42,7 +41,7 @@ def load_gene_mappings(card_tsv):
     return df.set_index('ARO Accession')[['Model Name', 'Drug Class']].to_dict('index')
 
 def run_blast(fasta_file, db_path, output_file):
-    """Run BLASTn with error handling."""
+    """Run BLASTn with error handling and timeout."""
     cmd = ["blastn", "-version"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -52,32 +51,34 @@ def run_blast(fasta_file, db_path, output_file):
         raise RuntimeError(f"BLAST version check failed: {e.stderr}")
     if not os.path.exists(fasta_file):
         raise FileNotFoundError(f"FASTA file {fasta_file} not found")
-    def timeout_handler(signum, frame):
-        raise TimeoutError("BLAST execution timed out")
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(3600)  # 1 hour timeout
-    try:
-        cmd = [
-            "blastn",
-            "-query", fasta_file,
-            "-db", db_path,
-            "-out", output_file,
-            "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
-            "-num_threads", "4",
-            "-max_target_seqs", "100"
-        ]
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        if os.path.exists(output_file):
-            hit_count = sum(1 for _ in open(output_file))
-            logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
-        else:
-            logger.error("BLAST output file not created")
-            raise RuntimeError("BLAST output file not created")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"BLAST failed: {e.stderr}")
-        raise RuntimeError(f"BLAST failed: {e.stderr}")
-    finally:
-        signal.alarm(0)
+    cmd = [
+        "blastn",
+        "-query", fasta_file,
+        "-db", db_path,
+        "-out", output_file,
+        "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
+        "-num_threads", "4",
+        "-max_target_seqs", "100"
+    ]
+    for attempt in range(3):
+        try:
+            logger.info(f"Running BLAST attempt {attempt + 1} for {fasta_file}")
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)  # 1 hour
+            if os.path.exists(output_file):
+                hit_count = sum(1 for _ in open(output_file))
+                logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
+                return
+            else:
+                logger.error("BLAST output file not created")
+                raise RuntimeError("BLAST output file not created")
+        except subprocess.TimeoutExpired:
+            logger.warning(f"BLAST timed out on attempt {attempt + 1}")
+            if attempt == 2:
+                raise TimeoutError("BLAST execution timed out after 3 attempts")
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"BLAST attempt {attempt + 1} failed: {e.stderr}")
+            if attempt == 2:
+                raise RuntimeError(f"BLAST failed: {e.stderr}")
 
 def parse_blast_results(blast_file, gene_mappings, min_identity=20.0, min_coverage=0.0):
     """Parse BLAST results and map to antibiotics."""
@@ -94,7 +95,7 @@ def parse_blast_results(blast_file, gene_mappings, min_identity=20.0, min_covera
             fields = line.strip().split('\t')
             if len(fields) < 14:
                 continue
-            aro = fields[1].split('|')[-2] if 'ARO' in fields[1] else fields[1]  # Extract ARO from sseqid
+            aro = fields[1].split('|')[-2] if 'ARO' in fields[1] else fields[1]
             pident = float(fields[2])
             qlen = int(fields[12])
             slen = int(fields[13])
@@ -157,7 +158,6 @@ def validate_fasta(fasta_file):
         total_length = sum(len(record.seq) for record in records)
         if total_length < 1000:
             raise ValueError(f"FASTA file too small: {total_length} bp")
-        # Normalize GCA_/GCF_ prefix
         base_name = os.path.basename(fasta_file)
         if base_name.startswith("GCF_") and not os.path.exists(fasta_file.replace("GCF_", "GCA_")):
             logger.warning(f"Checking for GCA_ prefix: {fasta_file.replace('GCF_', 'GCA_')}")

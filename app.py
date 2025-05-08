@@ -71,6 +71,11 @@ if fasta_file:
                 df = parse_blast_results(blast_output, gene_mappings, min_identity=identity_threshold, min_coverage=coverage_threshold)
                 
                 if not df.empty:
+                    # Antibiotic filter
+                    antibiotics = sorted(df["Antibiotic"].unique())
+                    selected_antibiotic = st.multiselect("Filter by Antibiotic Class", antibiotics, default=antibiotics)
+                    df = df[df["Antibiotic"].isin(selected_antibiotic)]
+                    
                     # Save filtered results
                     df.to_csv(output_csv, index=False)
                     summary = df.groupby("Antibiotic").size().reset_index(name="ARG_Count")
@@ -132,6 +137,9 @@ if fasta_file:
             except FileNotFoundError as e:
                 st.error(f"Error: {str(e)}. Ensure the FASTA file name matches the uploaded file (e.g., GCA_ vs. GCF_).")
                 logger.error(f"Analysis error: {str(e)}")
+            except TimeoutError as e:
+                st.error(f"Error: BLAST execution timed out after 1 hour. Try a smaller FASTA file or contact support.")
+                logger.error(f"Analysis timeout: {str(e)}")
             except ValueError as e:
                 st.warning(f"Error: {str(e)}")
                 logger.warning(f"Analysis warning: {str(e)}")
