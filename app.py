@@ -4,6 +4,10 @@ import plotly.express as px
 import os
 import logging
 from dfu_resistance_analyzer import main as run_analysis, parse_blast_results, load_gene_mappings
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.lib import colors
 
 # Setup logging
 logging.basicConfig(
@@ -54,6 +58,8 @@ if fasta_file:
                 output_csv = f"outputs/{os.path.splitext(fasta_file.name)[0]}_report.csv"
                 output_summary = output_csv.replace(".csv", "_summary.csv")
                 blast_output = f"outputs/{os.path.splitext(fasta_file.name)[0]}_blast_results.txt"
+                plot_html = output_csv.replace(".csv", "_plot.html")
+                plot_png = output_csv.replace(".csv", "_plot.png")
                 
                 # Load raw BLAST hits
                 raw_hits = []
@@ -110,18 +116,45 @@ if fasta_file:
                     fig.update_layout(xaxis_tickangle=45)
                     st.plotly_chart(fig, use_container_width=True)
                     
+                    # Check PNG plot
+                    if not os.path.exists(plot_png):
+                        st.warning("PNG plot generation failed. Using interactive HTML plot.")
+                        logger.warning(f"PNG plot missing: {plot_png}")
+                    
                     # Download buttons
                     st.download_button(
-                        label="Download Report",
+                        label="Download Report (CSV)",
                         data=df.to_csv(index=False),
                         file_name=f"{os.path.splitext(fasta_file.name)[0]}_report.csv",
                         mime="text/csv"
                     )
                     st.download_button(
                         label="Download Plot (HTML)",
-                        data=open(output_csv.replace(".csv", "_plot.html"), "rb").read(),
+                        data=open(plot_html, "rb").read(),
                         file_name=f"{os.path.splitext(fasta_file.name)[0]}_plot.html",
                         mime="text/html"
+                    )
+                    # PDF export
+                    pdf_buffer = io.BytesIO()
+                    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+                    data = [df.columns.tolist()] + df[["Gene", "Antibiotic", "Percent_Identity", "Coverage", "Evalue"]].values.tolist()
+                    table = Table(data)
+                    table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                    ]))
+                    doc.build([table])
+                    pdf_buffer.seek(0)
+                    st.download_button(
+                        label="Download Report (PDF)",
+                        data=pdf_buffer,
+                        file_name=f"{os.path.splitext(fasta_file.name)[0]}_report.pdf",
+                        mime="application/pdf"
                     )
                 else:
                     st.warning(f"No resistance genes detected with thresholds ({identity_threshold}% identity, {coverage_threshold}% coverage).")

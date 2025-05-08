@@ -3,7 +3,7 @@ import os
 import subprocess
 import pandas as pd
 import logging
-from dfu_resistance_analyzer import load_gene_mappings, parse_blast_results
+from dfu_resistance_analyzer import load_gene_mappings, parse_blast_results, plot_results
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def debug_blast(fasta_file, db_path, output_file, card_tsv):
-    """Run BLAST and parse ARGs."""
+    """Run BLAST, parse ARGs, and generate plot."""
     possible_paths = [
         fasta_file,
         os.path.join(os.getcwd(), fasta_file),
@@ -56,7 +56,11 @@ def debug_blast(fasta_file, db_path, output_file, card_tsv):
             logger.info(f"Detected {len(df)} ARGs")
             if not df.empty:
                 logger.info(f"Sample ARGs:\n{df[['Gene', 'Antibiotic', 'Percent_Identity']].head().to_string()}")
-            df.to_csv(output_file.replace(".txt", "_args.csv"), index=False)
+                df.to_csv(output_file.replace(".txt", "_args.csv"), index=False)
+                # Generate plot
+                plot_file = output_file.replace(".txt", "_plot.png")
+                plot_results(df, plot_file)
+                logger.info(f"Generated debug plot: {plot_file}")
         else:
             logger.error("BLAST output file not created")
     except subprocess.TimeoutExpired:

@@ -63,7 +63,7 @@ def run_blast(fasta_file, db_path, output_file):
     for attempt in range(3):
         try:
             logger.info(f"Running BLAST attempt {attempt + 1} for {fasta_file}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)  # 1 hour
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
             if os.path.exists(output_file):
                 hit_count = sum(1 for _ in open(output_file))
                 logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
@@ -130,9 +130,16 @@ def plot_results(df, output_file):
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
     fig.update_layout(xaxis_tickangle=45)
-    fig.write_html(output_file.replace(".png", ".html"))
-    fig.write_image(output_file, format="png")
-    logger.info(f"Generated plot: {output_file}")
+    html_file = output_file.replace(".png", ".html")
+    fig.write_html(html_file)
+    logger.info(f"Generated HTML plot: {html_file}")
+    try:
+        fig.write_image(output_file, format="png")
+        logger.info(f"Generated PNG plot: {output_file}")
+    except Exception as e:
+        logger.warning(f"Failed to generate PNG plot: {str(e)}. Using HTML plot only.")
+        if not os.path.exists(html_file):
+            raise RuntimeError("Failed to generate both PNG and HTML plots")
 
 def save_results(df, output_file):
     """Save results to CSV and summary table."""
