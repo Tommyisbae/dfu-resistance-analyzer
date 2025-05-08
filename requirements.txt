@@ -52,6 +52,7 @@ platformdirs @ file:///croot/platformdirs_1744273042065/work
 plotly==6.0.1
 pluggy @ file:///croot/pluggy_1733169602837/work
 protobuf==6.30.2
+psutil==7.0.0
 pyarrow==20.0.0
 pycosat @ file:///croot/pycosat_1736868416091/work
 pycparser @ file:///tmp/build/80754af9/pycparser_1636541352034/work
