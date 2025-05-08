@@ -5,9 +5,16 @@ import os
 import logging
 from dfu_resistance_analyzer import main as run_analysis, parse_blast_results, load_gene_mappings
 import io
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
-from reportlab.lib import colors
+
+# Attempt to import reportlab for PDF export
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+    from reportlab.lib import colors
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    logging.warning("reportlab not installed; PDF export disabled")
 
 # Setup logging
 logging.basicConfig(
@@ -33,6 +40,7 @@ elif preset == "Moderate (30%, 5%)":
 else:
     identity_threshold, coverage_threshold = 50.0, 10.0
 plot_height = st.sidebar.slider("Plot Height", 400, 800, 500)
+plot_title = st.sidebar.text_input("Plot Title", "Top 10 Resistance Genes")
 
 # File upload
 fasta_file = st.file_uploader("Choose FASTA file", type=["fna"], accept_multiple_files=False)
@@ -106,7 +114,7 @@ if fasta_file:
                         x="Gene",
                         y="Percent_Identity",
                         color="Antibiotic",
-                        title="Top 10 Resistance Genes",
+                        title=plot_title,
                         height=plot_height,
                         text="Percent_Identity",
                         hover_data=["Coverage", "Evalue"],
@@ -135,27 +143,31 @@ if fasta_file:
                         mime="text/html"
                     )
                     # PDF export
-                    pdf_buffer = io.BytesIO()
-                    doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
-                    data = [df.columns.tolist()] + df[["Gene", "Antibiotic", "Percent_Identity", "Coverage", "Evalue"]].values.tolist()
-                    table = Table(data)
-                    table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
-                    ]))
-                    doc.build([table])
-                    pdf_buffer.seek(0)
-                    st.download_button(
-                        label="Download Report (PDF)",
-                        data=pdf_buffer,
-                        file_name=f"{os.path.splitext(fasta_file.name)[0]}_report.pdf",
-                        mime="application/pdf"
-                    )
+                    if REPORTLAB_AVAILABLE:
+                        pdf_buffer = io.BytesIO()
+                        doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
+                        data = [df.columns.tolist()] + df[["Gene", "Antibiotic", "Percent_Identity", "Coverage", "Evalue"]].values.tolist()
+                        table = Table(data)
+                        table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                        ]))
+                        doc.build([table])
+                        pdf_buffer.seek(0)
+                        st.download_button(
+                            label="Download Report (PDF)",
+                            data=pdf_buffer,
+                            file_name=f"{os.path.splitext(fasta_file.name)[0]}_report.pdf",
+                            mime="application/pdf"
+                        )
+                    else:
+                        st.warning("PDF export unavailable. Install reportlab for PDF functionality.")
+                        logger.warning("PDF export skipped due to missing reportlab")
                 else:
                     st.warning(f"No resistance genes detected with thresholds ({identity_threshold}% identity, {coverage_threshold}% coverage).")
                     st.write(f"Raw BLAST hits: {hit_count}")
