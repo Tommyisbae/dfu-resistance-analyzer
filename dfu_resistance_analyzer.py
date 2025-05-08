@@ -1,192 +1,154 @@
-import argparse
+import subprocess
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from Bio import SeqIO
-from Bio.Blast import NCBIWWW, NCBIXML
-import time
-import urllib.error
-import urllib.request
 import os
-import ssl
+import sys
+import re
 
-# Map resistance genes to antibiotics
-GENE_TO_ANTIBIOTIC = {
-    "mecA": "Methicillin",
-    "blaNDM-1": "Carbapenems",
-    "tetA": "Tetracycline",
-    "blaKPC": "Carbapenems"
-}
+def load_aro_mappings(aro_file):
+    """Load ARO mappings from aro_index.tsv."""
+    mappings = {}
+    df = pd.read_csv(aro_file, sep='\t')
+    for _, row in df.iterrows():
+        aro = row['ARO Accession']
+        gene = row['Model Name']
+        antibiotic = row.get('Drug Class', 'Unknown')
+        mappings[aro] = {'gene': gene, 'antibiotic': antibiotic}
+    return mappings
 
-def parse_fasta(fasta_file):
-    """
-    Read FASTA file (DNA from DFU bacteria, e.g., S. aureus, P. aeruginosa).
-    Why: Automates reading raw data, often manually processed in labs.
-    Returns: List of sequences or empty list on error.
-    """
-    if not os.path.exists(fasta_file):
-        print(f"Error: FASTA file '{fasta_file}' not found.")
-        return []
-    try:
-        if os.path.getsize(fasta_file) > 1_000_000:
-            print("Error: FASTA file too large (>1MB). Use smaller file for testing.")
-            return []
-        sequences = list(SeqIO.parse(fasta_file, "fasta"))
-        if not sequences:
-            print(f"Error: FASTA file '{fasta_file}' is empty or invalid.")
-            return []
-        print(f"Loaded {len(sequences)} sequences from {fasta_file}")
-        return sequences
-    except Exception as e:
-        print(f"Error reading FASTA file: {e}")
-        return []
+def run_blast(fasta_file, db_path, output_file):
+    """Run BLASTn on input FASTA against CARD database."""
+    cmd = [
+        'blastn',
+        '-query', fasta_file,
+        '-db', db_path,
+        '-out', output_file,
+        '-outfmt', '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen',
+        '-num_threads', '4',
+        '-max_target_seqs', '20'
+    ]
+    subprocess.run(cmd, check=True)
 
-def run_blast(sequence, use_mock=True, retries=3, delay=5):
-    """
-    Run BLAST to find resistance genes (online or mock).
-    Mock: Returns fake results for testing.
-    Online: NCBI server with SSL and retry logic.
-    Returns: XML file or mock list.
-    """
-    if use_mock:
-        print("Using mock BLAST results (for testing).")
-        return [
-            {"Gene": "mecA", "Antibiotic": "Methicillin", "E-value": 1e-20},
-            {"Gene": "blaNDM-1", "Antibiotic": "Carbapenems", "E-value": 1e-15}
-        ]
+def parse_blast_results(blast_file, mappings, identity_threshold=50.0, coverage_threshold=10.0):
+    """Parse BLAST results and map to resistance genes."""
+    columns = ['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 
+               'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore', 'qlen', 'slen']
+    df = pd.read_csv(blast_file, sep='\t', names=columns)
+    
+    print(f"Raw BLAST hits: {len(df)}")
+    if not df.empty:
+        print("Sample BLAST hits:")
+        print(df[['sseqid', 'pident', 'length', 'evalue', 'slen']].head().to_string(index=False))
+    
+    # Calculate coverage based on subject length (resistance genes are short)
+    df['coverage'] = (df['length'] / df['slen']) * 100
+    
+    # Filter by identity and coverage
+    df = df[(df['pident'] >= identity_threshold) & (df['coverage'] >= coverage_threshold)]
+    
+    print(f"Filtered BLAST hits (>{identity_threshold}% identity, >{coverage_threshold}% coverage): {len(df)}")
+    
+    # Map to ARO and antibiotics
+    results = []
+    unmatched_aros = set()
+    for _, row in df.iterrows():
+        sseqid = row['sseqid']
+        aro_match = re.search(r'ARO:(\d+)', sseqid)
+        if aro_match:
+            aro = f"ARO:{aro_match.group(1)}"
+        else:
+            print(f"Warning: No ARO ID found in {sseqid}")
+            continue
+        
+        if aro in mappings:
+            gene = mappings[aro]['gene']
+            antibiotic = mappings[aro]['antibiotic']
+            results.append({
+                'Query': row['qseqid'],
+                'Gene': gene,
+                'Antibiotic': antibiotic,
+                'Percent_Identity': row['pident'],
+                'Alignment_Length': row['length'],
+                'E-value': row['evalue'],
+                'Bitscore': row['bitscore'],
+                'Coverage': row['coverage']
+            })
+        else:
+            unmatched_aros.add(aro)
+    
+    if unmatched_aros:
+        print(f"Warning: {len(unmatched_aros)} AROs not found in mappings: {', '.join(sorted(unmatched_aros))}")
+    
+    results_df = pd.DataFrame(results)
+    print(f"Mapped resistance genes: {len(results_df)}")
+    return results_df
 
-    for attempt in range(retries):
-        try:
-            print(f"Running online BLAST query (attempt {attempt+1}/{retries})... (1-2 minutes)")
-            context = ssl._create_unverified_context()
-            result_handle = NCBIWWW.qblast("blastn", "nr", sequence, hitlist_size=5, ssl_context=context)
-            blast_file = "blast_results.xml"
-            with open(blast_file, "w") as out_handle:
-                content = result_handle.read()
-                out_handle.write(content)
-            result_handle.close()
-            print(f"BLAST results saved to {blast_file}")
-            # Debug: Check if results contain expected genes
-            with open(blast_file) as f:
-                content = f.read()
-                for gene in GENE_TO_ANTIBIOTIC:
-                    if gene.lower() in content.lower():
-                        print(f"Found {gene} in BLAST results")
-            return blast_file
-        except urllib.error.URLError as e:
-            print(f"Online BLAST failed: {e}")
-            if attempt < retries - 1:
-                print(f"Retrying in {delay} seconds...")
-                time.sleep(delay)
-            else:
-                print("All online retries failed.")
-        except Exception as e:
-            print(f"Online BLAST query failed: {e}")
-            return None
-    return None
-
-def parse_blast_results(blast_input, e_value_threshold=1e-10):
-    """
-    Parse BLAST results (XML or mock list) to detect resistance genes.
-    Returns: List of detected genes and antibiotics.
-    """
-    resistance_hits = []
-    if isinstance(blast_input, list):
-        return blast_input
-    if not blast_input or not os.path.exists(blast_input):
-        print("Error: No BLAST results to parse.")
-        return resistance_hits
-    try:
-        with open(blast_input) as result_handle:
-            blast_records = NCBIXML.parse(result_handle)
-            for record in blast_records:
-                for alignment in record.alignments:
-                    print(f"Alignment title: {alignment.title}")  # Debug
-                    for hsp in alignment.hsps:
-                        if hsp.expect < e_value_threshold:
-                            gene = None
-                            for known_gene in GENE_TO_ANTIBIOTIC:
-                                if known_gene.lower() in alignment.title.lower():
-                                    gene = known_gene
-                                    break
-                            if gene:
-                                resistance_hits.append({
-                                    "Gene": gene,
-                                    "Antibiotic": GENE_TO_ANTIBIOTIC[gene],
-                                    "E-value": hsp.expect
-                                })
-        if not resistance_hits:
-            print("No resistance genes matched in BLAST results.")
-        return resistance_hits
-    except Exception as e:
-        print(f"Error parsing BLAST results: {e}")
-        return []
-
-def generate_report(hits, output_csv="resistance_report.csv"):
-    """
-    Create CSV, plot, and summary for clinicians.
-    Outputs:
-    - CSV: Gene, Prevalence, Antibiotic.
-    - Plot: Gene frequencies.
-    - Summary: Clinical advice.
-    """
-    if not hits:
-        summary = "No resistance genes detected.\nRecommendation: Standard antibiotics may be effective, but confirm with lab tests."
-        print(summary)
-        with open("resistance_summary.txt", "w") as f:
-            f.write(summary)
+def plot_results(df, output_file):
+    """Generate a bar plot of resistance genes by percent identity."""
+    if df.empty:
+        print("No resistance genes detected, creating empty plot")
+        plt.figure(figsize=(12, 6))
+        plt.title('Detected Resistance Genes')
+        plt.xlabel('Gene')
+        plt.ylabel('Percent Identity')
+        plt.text(0.5, 0.5, 'No resistance genes detected', horizontalalignment='center', verticalalignment='center')
+        plt.savefig(output_file)
+        plt.close()
         return
-
-    df = pd.DataFrame(hits)
-    prevalence = df["Gene"].value_counts(normalize=True).reset_index()
-    prevalence.columns = ["Gene", "Prevalence"]
-    prevalence["Antibiotic"] = prevalence["Gene"].map(GENE_TO_ANTIBIOTIC)
-    prevalence.to_csv(output_csv, index=False)
-    print(f"Report saved to {output_csv}")
-    print(prevalence)
-
-    plt.figure(figsize=(8, 6))
-    sns.barplot(x="Gene", y="Prevalence", data=prevalence)
-    plt.title("Resistance Gene Prevalence in DFU Samples")
-    plt.xlabel("Resistance Gene")
-    plt.ylabel("Prevalence")
-    plt.savefig("prevalence_plot.png")
+    
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=df, x='Gene', y='Percent_Identity', hue='Antibiotic')
+    plt.title('Detected Resistance Genes')
+    plt.xlabel('Gene')
+    plt.ylabel('Percent Identity')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.savefig(output_file)
     plt.close()
 
-    summary = "Resistance Analysis for Diabetic Foot Ulcer Samples:\n"
-    for _, row in prevalence.iterrows():
-        summary += f"- {row['Gene']} found in {row['Prevalence']*100:.1f}% of samples, " \
-                   f"indicating resistance to {row['Antibiotic']}.\n"
-    summary += "Recommendation: Avoid listed antibiotics. Consider vancomycin or linezolid, and consult a microbiologist."
-    print(summary)
-    with open("resistance_summary.txt", "w") as f:
-        f.write(summary)
-
 def main():
-    """
-    Analyze DFU bacterial DNA for resistance genes.
-    Why: Automates detection of genes (mecA, blaNDM-1) in local samples,
-         addressing Nigeria's high resistance (92.9% multidrug-resistant DFUs).
-    """
-    parser = argparse.ArgumentParser(description="Analyze DFU bacterial DNA for resistance genes.")
-    parser.add_argument("fasta_file", help="Path to FASTA file (e.g., test_sequences.fasta)")
-    args = parser.parse_args()
+    if len(sys.argv) != 2:
+        print("Usage: python dfu_resistance_analyzer.py <input_fasta>")
+        sys.exit(1)
+    
+    fasta_file = sys.argv[1]
+    aro_file = 'card_database/aro_index.tsv'
+    db_path = 'card_database/card_db'
+    blast_output = 'outputs/blast_results.txt'
+    report_output = 'outputs/resistance_report.csv'
+    plot_output = 'outputs/resistance_plot.png'
+    
+    # Create outputs directory
+    os.makedirs('outputs', exist_ok=True)
+    
+    # Load ARO mappings
+    print(f"Loading gene mappings from {aro_file}")
+    mappings = load_aro_mappings(aro_file)
+    print(f"Loaded {len(mappings)} gene mappings")
+    
+    # Run BLAST
+    print(f"Running BLAST against {db_path}")
+    run_blast(fasta_file, db_path, blast_output)
+    
+    # Parse results
+    print("Parsing BLAST results")
+    results_df = parse_blast_results(blast_output, mappings)
+    
+    if results_df.empty:
+        print("No resistance genes detected")
+    else:
+        print(f"Detected {len(results_df)} resistance gene hit(s)")
+        print(results_df[['Gene', 'Antibiotic', 'Percent_Identity', 'Alignment_Length']].to_string(index=False))
+    
+    # Save report
+    results_df.to_csv(report_output, index=False)
+    print(f"Report saved to {report_output}")
+    
+    # Generate plot
+    plot_results(results_df, plot_output)
+    print(f"Plot saved to {plot_output}")
 
-    sequences = parse_fasta(args.fasta_file)
-    if not sequences:
-        print("No sequences to process. Exiting.")
-        return
-
-    all_hits = []
-    for i, seq in enumerate(sequences[:3]):  # Process all 3 sequences
-        print(f"Processing sequence {i+1}/{len(sequences)}: {seq.id}")
-        blast_result = run_blast(seq.seq, use_mock=True)  # Mock results for testing
-        if blast_result:
-            hits = parse_blast_results(blast_result)
-            all_hits.extend(hits)
-        time.sleep(2)
-
-    generate_report(all_hits)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
