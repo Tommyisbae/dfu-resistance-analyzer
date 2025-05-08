@@ -6,8 +6,14 @@ import plotly.express as px
 from Bio import SeqIO
 
 def load_gene_mappings(card_tsv):
-    """Load CARD gene mappings from aro_index.tsv."""
+    """Load CARD gene mappings from aro_index.tsv, handling duplicate AROs."""
+    if not os.path.exists(card_tsv):
+        raise FileNotFoundError(f"CARD index file {card_tsv} not found")
     df = pd.read_csv(card_tsv, sep='\t')
+    if 'ARO Accession' not in df.columns or 'Model Name' not in df.columns or 'Drug Class' not in df.columns:
+        raise ValueError("Invalid CARD index format: Missing required columns")
+    # Deduplicate by keeping first occurrence of each ARO
+    df = df.drop_duplicates(subset='ARO Accession', keep='first')
     return df.set_index('ARO Accession')[['Model Name', 'Drug Class']].to_dict('index')
 
 def run_blast(fasta_file, db_path, output_file):
@@ -32,6 +38,8 @@ def run_blast(fasta_file, db_path, output_file):
 
 def parse_blast_results(blast_file, gene_mappings):
     """Parse BLAST results and map to antibiotics."""
+    if not os.path.exists(blast_file):
+        raise FileNotFoundError(f"BLAST output {blast_file} not found")
     results = []
     with open(blast_file, 'r') as f:
         for line in f:
@@ -56,6 +64,8 @@ def parse_blast_results(blast_file, gene_mappings):
 
 def plot_results(df, output_file):
     """Generate Plotly bar plot for top 10 ARGs."""
+    if df.empty:
+        raise ValueError("No resistance genes to plot")
     top_df = df.nlargest(10, 'Percent_Identity')
     fig = px.bar(top_df, x="Gene", y="Percent_Identity", color="Antibiotic",
                  title="Top 10 Resistance Genes", height=500)
@@ -65,9 +75,22 @@ def plot_results(df, output_file):
 
 def save_results(df, output_file):
     """Save results to CSV and summary table."""
+    if df.empty:
+        raise ValueError("No resistance genes to save")
     df.to_csv(output_file, index=False)
     summary = df.groupby("Antibiotic").size().reset_index(name="ARG_Count")
     summary.to_csv(output_file.replace(".csv", "_summary.csv"), index=False)
+
+def validate_fasta(fasta_file):
+    """Validate FASTA file format."""
+    try:
+        with open(fasta_file, 'r') as f:
+            records = list(SeqIO.parse(f, "fasta"))
+        if not records:
+            raise ValueError("FASTA file is empty or invalid")
+        return True
+    except Exception as e:
+        raise ValueError(f"Invalid FASTA format: {str(e)}")
 
 def main(fasta_file=None):
     """Main function to run ARG detection."""
@@ -76,9 +99,8 @@ def main(fasta_file=None):
             raise ValueError("No FASTA file provided. Usage: python dfu_resistance_analyzer.py <fasta_file>")
         fasta_file = sys.argv[1]
     
-    # Validate FASTA file
-    if not os.path.exists(fasta_file):
-        raise FileNotFoundError(f"FASTA file {fasta_file} not found")
+    # Validate inputs
+    validate_fasta(fasta_file)
     
     # Paths
     card_tsv = "card_database/aro_index.tsv"
@@ -106,7 +128,7 @@ def main(fasta_file=None):
         save_results(df, csv_output)
         plot_results(df, plot_output)
     else:
-        raise ValueError("No resistance genes detected with given thresholds.")
+        raise ValueError("No resistance genes detected with given thresholds (50% identity, 10% coverage).")
 
 if __name__ == "__main__":
     main()

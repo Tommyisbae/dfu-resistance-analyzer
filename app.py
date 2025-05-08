@@ -11,7 +11,7 @@ st.markdown("Upload a bacterial genome FASTA file to detect antibiotic resistanc
 fasta_file = st.file_uploader("Choose FASTA file", type=["fna"], accept_multiple_files=False)
 if fasta_file:
     # Save uploaded file
-    temp_fasta = "temp.fna"
+    temp_fasta = f"temp_{fasta_file.name}"
     with open(temp_fasta, "wb") as f:
         f.write(fasta_file.read())
     
@@ -19,6 +19,7 @@ if fasta_file:
     try:
         run_analysis(temp_fasta)
         output_csv = f"outputs/{os.path.splitext(fasta_file.name)[0]}_report.csv"
+        output_summary = output_csv.replace(".csv", "_summary.csv")
         if os.path.exists(output_csv):
             df = pd.read_csv(output_csv)
             
@@ -29,6 +30,12 @@ if fasta_file:
                 .sort_values("Percent_Identity", ascending=False),
                 use_container_width=True
             )
+            
+            # Display summary table
+            if os.path.exists(output_summary):
+                st.subheader("Summary by Antibiotic")
+                summary_df = pd.read_csv(output_summary)
+                st.dataframe(summary_df, use_container_width=True)
             
             # Plot top 10 ARGs
             top_df = df.nlargest(10, "Percent_Identity")
@@ -58,7 +65,7 @@ if fasta_file:
     except ValueError as e:
         st.error(f"Error: {str(e)}")
     except Exception as e:
-        st.error(f"Unexpected error: {str(e)}. Please check the FASTA file and try again.")
+        st.error(f"Unexpected error: {str(e)}. Please check the FASTA file and CARD database, then try again.")
     
     # Clean up
     if os.path.exists(temp_fasta):
