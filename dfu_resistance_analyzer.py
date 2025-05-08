@@ -1,156 +1,112 @@
+import sys
+import os
 import subprocess
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
+import plotly.express as px
 from Bio import SeqIO
-import os
-import sys
-import re
 
-def load_aro_mappings(aro_file):
-    """Load ARO mappings from aro_index.tsv."""
-    mappings = {}
-    df = pd.read_csv(aro_file, sep='\t')
-    for _, row in df.iterrows():
-        aro = row['ARO Accession']
-        gene = row['Model Name']
-        antibiotic = row.get('Drug Class', 'Unknown')
-        mappings[aro] = {'gene': gene, 'antibiotic': antibiotic}
-    print(f"Loaded {len(mappings)} gene mappings")
-    return mappings
+def load_gene_mappings(card_tsv):
+    """Load CARD gene mappings from aro_index.tsv."""
+    df = pd.read_csv(card_tsv, sep='\t')
+    return df.set_index('ARO Accession')[['Model Name', 'Drug Class']].to_dict('index')
 
 def run_blast(fasta_file, db_path, output_file):
-    """Run BLASTn on input FASTA against CARD database."""
+    """Run BLASTn with error handling."""
+    if not os.path.exists(fasta_file):
+        raise FileNotFoundError(f"FASTA file {fasta_file} not found")
+    if not os.path.exists(db_path + ".nhr"):
+        raise FileNotFoundError(f"BLAST database {db_path} not found")
     cmd = [
-        'blastn',
-        '-query', fasta_file,
-        '-db', db_path,
-        '-out', output_file,
-        '-outfmt', '6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen',
-        '-num_threads', '4',
-        '-max_target_seqs', '20'
+        "blastn",
+        "-query", fasta_file,
+        "-db", db_path,
+        "-out", output_file,
+        "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
+        "-num_threads", "4",
+        "-max_target_seqs", "20"
     ]
-    subprocess.run(cmd, check=True)
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"BLAST failed: {e.stderr}")
 
-def parse_blast_results(blast_file, mappings, identity_threshold=50.0, coverage_threshold=10.0):
-    """Parse BLAST results and map to resistance genes."""
-    columns = ['qseqid', 'sseqid', 'pident', 'length', 'mismatch', 'gapopen', 
-               'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore', 'qlen', 'slen']
-    df = pd.read_csv(blast_file, sep='\t', names=columns)
-    
-    print(f"Raw BLAST hits: {len(df)}")
-    if not df.empty:
-        print("Sample BLAST hits:")
-        print(df[['sseqid', 'pident', 'length', 'evalue', 'slen']].head().to_string(index=False))
-    
-    # Calculate coverage based on subject length (resistance genes are short)
-    df['coverage'] = (df['length'] / df['slen']) * 100
-    
-    # Filter by identity and coverage
-    df = df[(df['pident'] >= identity_threshold) & (df['coverage'] >= coverage_threshold)]
-    
-    print(f"Filtered BLAST hits (>{identity_threshold}% identity, >{coverage_threshold}% coverage): {len(df)}")
-    
-    # Map to ARO and antibiotics
+def parse_blast_results(blast_file, gene_mappings):
+    """Parse BLAST results and map to antibiotics."""
     results = []
-    unmatched_aros = set()
-    for _, row in df.iterrows():
-        sseqid = row['sseqid']
-        aro_match = re.search(r'ARO:(\d+)', sseqid)
-        if aro_match:
-            aro = f"ARO:{aro_match.group(1)}"
-        else:
-            print(f"Warning: No ARO ID found in {sseqid}")
-            continue
-        
-        if aro in mappings:
-            gene = mappings[aro]['gene']
-            antibiotic = mappings[aro]['antibiotic']
-            results.append({
-                'Query': row['qseqid'],
-                'Gene': gene,
-                'Antibiotic': antibiotic,
-                'Percent_Identity': row['pident'],
-                'Alignment_Length': row['length'],
-                'E-value': row['evalue'],
-                'Bitscore': row['bitscore'],
-                'Coverage': row['coverage']
-            })
-        else:
-            unmatched_aros.add(aro)
-    
-    if unmatched_aros:
-        print(f"Warning: {len(unmatched_aros)} AROs not found in mappings: {', '.join(sorted(unmatched_aros))}")
-    
-    results_df = pd.DataFrame(results)
-    print(f"Mapped resistance genes: {len(results_df)}")
-    return results_df
+    with open(blast_file, 'r') as f:
+        for line in f:
+            fields = line.strip().split('\t')
+            if len(fields) < 14:
+                continue
+            aro = fields[1]  # sseqid (ARO accession)
+            pident = float(fields[2])
+            qlen = int(fields[12])
+            slen = int(fields[13])
+            coverage = (int(fields[3]) / min(qlen, slen)) * 100
+            if pident >= 50 and coverage >= 10:
+                if aro in gene_mappings:
+                    results.append({
+                        'Gene': gene_mappings[aro]['Model Name'],
+                        'Antibiotic': gene_mappings[aro]['Drug Class'],
+                        'Percent_Identity': pident,
+                        'Coverage': coverage,
+                        'Evalue': float(fields[10])
+                    })
+    return pd.DataFrame(results)
 
 def plot_results(df, output_file):
-    """Generate a bar plot of resistance genes by percent identity."""
-    if df.empty:
-        print("No resistance genes detected, creating empty plot")
-        plt.figure(figsize=(12, 6))
-        plt.title('Detected Resistance Genes')
-        plt.xlabel('Gene')
-        plt.ylabel('Percent Identity')
-        plt.text(0.5, 0.5, 'No resistance genes detected', horizontalalignment='center', verticalalignment='center')
-        plt.savefig(output_file)
-        plt.close()
-        return
-    
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=df, x='Gene', y='Percent_Identity', hue='Antibiotic')
-    plt.title('Detected Resistance Genes')
-    plt.xlabel('Gene')
-    plt.ylabel('Percent Identity')
-    plt.xticks(rotation=45, ha='right')
-    plt.tight_layout()
-    plt.savefig(output_file)
-    plt.close()
+    """Generate Plotly bar plot for top 10 ARGs."""
+    top_df = df.nlargest(10, 'Percent_Identity')
+    fig = px.bar(top_df, x="Gene", y="Percent_Identity", color="Antibiotic",
+                 title="Top 10 Resistance Genes", height=500)
+    fig.update_layout(xaxis_tickangle=45)
+    fig.write_html(output_file.replace(".png", ".html"))
+    fig.write_image(output_file, format="png")
 
-def main():
-    if len(sys.argv) != 2:
-        print("Usage: python dfu_resistance_analyzer.py <input_fasta>")
-        sys.exit(1)
+def save_results(df, output_file):
+    """Save results to CSV and summary table."""
+    df.to_csv(output_file, index=False)
+    summary = df.groupby("Antibiotic").size().reset_index(name="ARG_Count")
+    summary.to_csv(output_file.replace(".csv", "_summary.csv"), index=False)
+
+def main(fasta_file=None):
+    """Main function to run ARG detection."""
+    if fasta_file is None:
+        if len(sys.argv) < 2:
+            raise ValueError("No FASTA file provided. Usage: python dfu_resistance_analyzer.py <fasta_file>")
+        fasta_file = sys.argv[1]
     
-    fasta_file = sys.argv[1]
-    aro_file = 'card_database/aro_index.tsv'
-    db_path = 'card_database/card_db'
+    # Validate FASTA file
+    if not os.path.exists(fasta_file):
+        raise FileNotFoundError(f"FASTA file {fasta_file} not found")
     
-    # Derive output filenames from input FASTA
+    # Paths
+    card_tsv = "card_database/aro_index.tsv"
+    db_path = "card_database/card_db"
+    output_dir = "outputs"
     base_name = os.path.splitext(os.path.basename(fasta_file))[0]
-    output_dir = 'outputs'
-    os.makedirs(output_dir, exist_ok=True)
-    blast_output = os.path.join(output_dir, f'{base_name}_blast_results.txt')
-    report_output = os.path.join(output_dir, f'{base_name}_report.csv')
-    plot_output = os.path.join(output_dir, f'{base_name}_plot.png')
+    blast_output = f"{output_dir}/{base_name}_blast_results.txt"
+    csv_output = f"{output_dir}/{base_name}_report.csv"
+    plot_output = f"{output_dir}/{base_name}_plot.png"
     
-    # Load ARO mappings
-    print(f"Loading gene mappings from {aro_file}")
-    mappings = load_aro_mappings(aro_file)
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Load CARD mappings
+    gene_mappings = load_gene_mappings(card_tsv)
     
     # Run BLAST
-    print(f"Running BLAST against {db_path}")
     run_blast(fasta_file, db_path, blast_output)
     
     # Parse results
-    print("Parsing BLAST results")
-    results_df = parse_blast_results(blast_output, mappings)
+    df = parse_blast_results(blast_output, gene_mappings)
     
-    if results_df.empty:
-        print("No resistance genes detected")
+    # Save results
+    if not df.empty:
+        save_results(df, csv_output)
+        plot_results(df, plot_output)
     else:
-        print(f"Detected {len(results_df)} resistance gene hit(s)")
-        print(results_df[['Gene', 'Antibiotic', 'Percent_Identity', 'Alignment_Length']].to_string(index=False))
-    
-    # Save report
-    results_df.to_csv(report_output, index=False)
-    print(f"Report saved to {report_output}")
-    
-    # Generate plot
-    plot_results(results_df, plot_output)
-    print(f"Plot saved to {plot_output}")
+        raise ValueError("No resistance genes detected with given thresholds.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
