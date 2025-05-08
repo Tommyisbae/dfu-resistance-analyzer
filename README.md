@@ -40,4 +40,3 @@ License
 MIT License
 Contributing
 We welcome contributions! Please see CONTRIBUTING.md for guidelines.
-
