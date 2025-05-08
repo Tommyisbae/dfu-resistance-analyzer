@@ -1,0 +1,50 @@
+Query,Gene,Antibiotic,Percent_Identity,Alignment_Length,E-value,Bitscore,Coverage
+CP184993.1,oqxB,diaminopyrimidine antibiotic;fluoroquinolone antibiotic;glycylcycline;nitrofuran antibiotic;tetracycline antibiotic,98.573,3153,0.0,5574.0,100.0
+CP184993.1,LptD,aminocoumarin antibiotic;carbapenem;peptide antibiotic;rifamycin antibiotic,99.745,2349,0.0,4305.0,100.0
+CP184993.1,eptB,peptide antibiotic,99.536,1725,0.0,3142.0,100.0
+CP184993.1,ArnT,peptide antibiotic,99.275,1656,0.0,2992.0,100.0
+CP184993.1,MdtQ,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,100.0,1440,0.0,2660.0,100.0
+CP184993.1,mdtC,aminocoumarin antibiotic,82.116,3053,0.0,2610.0,99.18778427550357
+CP184993.1,tet(A),tetracycline antibiotic,100.0,1247,0.0,2303.0,97.80392156862744
+CP184993.1,Klebsiella pneumoniae KpnG,aminoglycoside antibiotic;carbapenem;cephalosporin;fluoroquinolone antibiotic;macrolide antibiotic;penicillin beta-lactam;peptide antibiotic,99.318,1173,0.0,2122.0,100.0
+CP184993.1,oqxA,diaminopyrimidine antibiotic;fluoroquinolone antibiotic;glycylcycline;nitrofuran antibiotic;tetracycline antibiotic,98.895,1176,0.0,2100.0,100.0
+CP184993.1,OmpA,peptide antibiotic,99.911,1125,0.0,2073.0,100.0
+CP184993.1,Klebsiella pneumoniae acrA,cephalosporin;disinfecting agents and antiseptics;fluoroquinolone antibiotic;glycylcycline;penicillin beta-lactam;phenicol antibiotic;rifamycin antibiotic;tetracycline antibiotic,97.911,1197,0.0,2069.0,100.0
+CP184993.1,CTX-M-15,cephalosporin;penicillin beta-lactam,99.886,876,0.0,1613.0,100.0
+CP184993.1,CTX-M-15,cephalosporin;penicillin beta-lactam,99.886,876,0.0,1613.0,100.0
+CP184993.1,CTX-M-276,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-276,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-275,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-275,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-274,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-274,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-273,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-273,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-271,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-271,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-268,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-268,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-266,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-266,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-259,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184993.1,CTX-M-259,cephalosporin,99.772,876,0.0,1607.0,100.0
+CP184994.1,KPC-2,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,100.0,882,0.0,1629.0,100.0
+CP184994.1,KPC-88,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-84,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-236,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-224,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-223,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-215,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-214,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-213,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-212,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-195,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-182,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-181,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-180,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-176,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-172,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-170,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-168,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-165,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0
+CP184994.1,KPC-158,carbapenem;cephalosporin;monobactam;penicillin beta-lactam,99.887,882,0.0,1624.0,100.0

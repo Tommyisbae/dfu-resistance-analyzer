@@ -1,0 +1,13 @@
+Query,Gene,Antibiotic,Percent_Identity,Alignment_Length,E-value,Bitscore,Coverage
+CP000253.1,kdpD,aminoglycoside antibiotic,98.984,2658,0.0,4759,100.0
+CP000253.1,Staphylococcus aureus LmrS,aminoglycoside antibiotic;diaminopyrimidine antibiotic;macrolide antibiotic;oxazolidinone antibiotic;phenicol antibiotic,100.0,1443,0.0,2665,100.0
+CP000253.1,mepA,glycylcycline;tetracycline antibiotic,100.0,1356,0.0,2505,100.0
+CP000253.1,arlS,disinfecting agents and antiseptics;fluoroquinolone antibiotic,100.0,1356,0.0,2505,100.0
+CP000253.1,tet(38),tetracycline antibiotic,99.852,1353,0.0,2488,100.0
+CP000253.1,sdrM,disinfecting agents and antiseptics;fluoroquinolone antibiotic,99.405,1344,0.0,2438,100.0
+CP000253.1,norC,disinfecting agents and antiseptics;fluoroquinolone antibiotic,96.976,1389,0.0,2333,100.0
+CP000253.1,Staphylococcus aureus norA,fluoroquinolone antibiotic,99.914,1167,0.0,2150,100.0
+CP000253.1,arlR,disinfecting agents and antiseptics;fluoroquinolone antibiotic,100.0,660,0.0,1219,100.0
+CP000253.1,mgrA,cephalosporin;disinfecting agents and antiseptics;fluoroquinolone antibiotic;penicillin beta-lactam;peptide antibiotic;tetracycline antibiotic,99.775,444,0.0,815,100.0
+CP000253.1,Staphylococcus aureus FosB,phosphonic acid antibiotic,100.0,420,0.0,776,100.0
+CP000253.1,mepR,glycylcycline;tetracycline antibiotic,99.286,420,0.0,760,100.0
