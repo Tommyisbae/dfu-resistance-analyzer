@@ -10,6 +10,7 @@ Brotli @ file:///croot/brotli-split_1736182456865/work
 cachetools==5.5.2
 certifi @ file:///croot/certifi_1745939216646/work/certifi
 cffi @ file:///croot/cffi_1736182485317/work
+chardet==5.2.0
 charset-normalizer @ file:///croot/charset-normalizer_1721748349566/work
 click==8.1.8
 conda @ file:///home/conda/feedstock_root/build_artifacts/conda_1744219994670/work/conda-src
@@ -63,6 +64,7 @@ PySocks @ file:///work/perseverance-python-buildout/croot/pysocks_1728386193338/
 python-dateutil==2.9.0.post0
 pytz==2025.2
 referencing==0.36.2
+reportlab==4.4.0
 requests @ file:///croot/requests_1730999120400/work
 rich @ file:///croot/rich_1732638981168/work
 rpds-py==0.24.0
