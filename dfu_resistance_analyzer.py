@@ -4,6 +4,11 @@ import subprocess
 import pandas as pd
 import plotly.express as px
 from Bio import SeqIO
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def load_gene_mappings(card_tsv):
     """Load CARD gene mappings from aro_index.tsv, handling duplicate AROs."""
@@ -12,8 +17,8 @@ def load_gene_mappings(card_tsv):
     df = pd.read_csv(card_tsv, sep='\t')
     if 'ARO Accession' not in df.columns or 'Model Name' not in df.columns or 'Drug Class' not in df.columns:
         raise ValueError("Invalid CARD index format: Missing required columns")
-    # Deduplicate by keeping first occurrence of each ARO
     df = df.drop_duplicates(subset='ARO Accession', keep='first')
+    logger.info(f"Loaded {len(df)} unique ARO mappings from {card_tsv}")
     return df.set_index('ARO Accession')[['Model Name', 'Drug Class']].to_dict('index')
 
 def run_blast(fasta_file, db_path, output_file):
@@ -29,29 +34,35 @@ def run_blast(fasta_file, db_path, output_file):
         "-out", output_file,
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
         "-num_threads", "4",
-        "-max_target_seqs", "20"
+        "-max_target_seqs", "50"  # Increased to capture more hits
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
+        logger.info(f"BLAST completed: Output saved to {output_file}")
     except subprocess.CalledProcessError as e:
+        logger.error(f"BLAST failed: {e.stderr}")
         raise RuntimeError(f"BLAST failed: {e.stderr}")
 
 def parse_blast_results(blast_file, gene_mappings):
     """Parse BLAST results and map to antibiotics."""
     if not os.path.exists(blast_file):
         raise FileNotFoundError(f"BLAST output {blast_file} not found")
+    if os.path.getsize(blast_file) == 0:
+        raise ValueError("BLAST output is empty; no hits found")
     results = []
+    total_hits = 0
     with open(blast_file, 'r') as f:
         for line in f:
+            total_hits += 1
             fields = line.strip().split('\t')
             if len(fields) < 14:
                 continue
-            aro = fields[1]  # sseqid (ARO accession)
+            aro = fields[1]
             pident = float(fields[2])
             qlen = int(fields[12])
             slen = int(fields[13])
             coverage = (int(fields[3]) / min(qlen, slen)) * 100
-            if pident >= 50 and coverage >= 10:
+            if pident >= 30 and coverage >= 5:  # Lowered thresholds
                 if aro in gene_mappings:
                     results.append({
                         'Gene': gene_mappings[aro]['Model Name'],
@@ -60,18 +71,30 @@ def parse_blast_results(blast_file, gene_mappings):
                         'Coverage': coverage,
                         'Evalue': float(fields[10])
                     })
-    return pd.DataFrame(results)
+    df = pd.DataFrame(results)
+    logger.info(f"Parsed {total_hits} BLAST hits, found {len(df)} ARGs meeting thresholds (30% identity, 5% coverage)")
+    return df
 
 def plot_results(df, output_file):
     """Generate Plotly bar plot for top 10 ARGs."""
     if df.empty:
         raise ValueError("No resistance genes to plot")
     top_df = df.nlargest(10, 'Percent_Identity')
-    fig = px.bar(top_df, x="Gene", y="Percent_Identity", color="Antibiotic",
-                 title="Top 10 Resistance Genes", height=500)
+    fig = px.bar(
+        top_df,
+        x="Gene",
+        y="Percent_Identity",
+        color="Antibiotic",
+        title="Top 10 Resistance Genes",
+        height=500,
+        text="Percent_Identity",
+        hover_data=["Coverage", "Evalue"]
+    )
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
     fig.update_layout(xaxis_tickangle=45)
     fig.write_html(output_file.replace(".png", ".html"))
     fig.write_image(output_file, format="png")
+    logger.info(f"Generated plot: {output_file}")
 
 def save_results(df, output_file):
     """Save results to CSV and summary table."""
@@ -80,6 +103,7 @@ def save_results(df, output_file):
     df.to_csv(output_file, index=False)
     summary = df.groupby("Antibiotic").size().reset_index(name="ARG_Count")
     summary.to_csv(output_file.replace(".csv", "_summary.csv"), index=False)
+    logger.info(f"Saved results: {output_file}, summary: {output_file.replace('.csv', '_summary.csv')}")
 
 def validate_fasta(fasta_file):
     """Validate FASTA file format."""
@@ -88,8 +112,10 @@ def validate_fasta(fasta_file):
             records = list(SeqIO.parse(f, "fasta"))
         if not records:
             raise ValueError("FASTA file is empty or invalid")
+        logger.info(f"Validated FASTA: {fasta_file}, {len(records)} sequences")
         return True
     except Exception as e:
+        logger.error(f"Invalid FASTA format: {str(e)}")
         raise ValueError(f"Invalid FASTA format: {str(e)}")
 
 def main(fasta_file=None):
@@ -128,7 +154,8 @@ def main(fasta_file=None):
         save_results(df, csv_output)
         plot_results(df, plot_output)
     else:
-        raise ValueError("No resistance genes detected with given thresholds (50% identity, 10% coverage).")
+        logger.warning("No resistance genes detected. Consider lowering thresholds or checking input data.")
+        raise ValueError("No resistance genes detected with thresholds (30% identity, 5% coverage). Try lowering thresholds or verifying the FASTA file.")
 
 if __name__ == "__main__":
     main()
