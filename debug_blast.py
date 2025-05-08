@@ -1,7 +1,9 @@
 import sys
 import os
 import subprocess
+import pandas as pd
 import logging
+from dfu_resistance_analyzer import load_gene_mappings, parse_blast_results
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,8 +15,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def debug_blast(fasta_file, db_path, output_file):
-    """Run BLAST and log results."""
+def debug_blast(fasta_file, db_path, output_file, card_tsv):
+    """Run BLAST and parse ARGs."""
     possible_paths = [
         fasta_file,
         os.path.join(os.getcwd(), fasta_file),
@@ -47,14 +49,22 @@ def debug_blast(fasta_file, db_path, output_file):
             logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
             with open(output_file, 'r') as f:
                 logger.info(f"First 5 hits:\n{f.read(500)}...")
+            # Parse ARGs
+            gene_mappings = load_gene_mappings(card_tsv)
+            df = parse_blast_results(output_file, gene_mappings, min_identity=20.0, min_coverage=0.0)
+            logger.info(f"Detected {len(df)} ARGs")
+            if not df.empty:
+                logger.info(f"Sample ARGs:\n{df[['Gene', 'Antibiotic', 'Percent_Identity']].head().to_string()}")
+            df.to_csv(output_file.replace(".txt", "_args.csv"), index=False)
         else:
             logger.error("BLAST output file not created")
     except subprocess.CalledProcessError as e:
         logger.error(f"BLAST failed: {e.stderr}")
 
 if __name__ == "__main__":
-    fasta_file = sys.argv[1] if len(sys.argv) > 1 else "GCF_048961785.1_ASM4896178v1_genomic.fna"
+    fasta_file = sys.argv[1] if len(sys.argv) > 1 else "GCA_048961785.1_ASM4896178v1_genomic.fna"
     db_path = "card_database/card_db"
+    card_tsv = "card_database/aro_index.tsv"
     output_file = "outputs/debug_blast_results.txt"
     os.makedirs("outputs", exist_ok=True)
-    debug_blast(fasta_file, db_path, output_file)
+    debug_blast(fasta_file, db_path, output_file, card_tsv)

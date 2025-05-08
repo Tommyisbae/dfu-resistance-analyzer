@@ -28,13 +28,14 @@ elif preset == "Moderate (30%, 5%)":
     identity_threshold, coverage_threshold = 30.0, 5.0
 else:
     identity_threshold, coverage_threshold = 50.0, 10.0
+plot_height = st.sidebar.slider("Plot Height", 400, 800, 500)
 
 # File upload
 fasta_file = st.file_uploader("Choose FASTA file", type=["fna"], accept_multiple_files=False)
 if fasta_file:
     # Save uploaded file
     temp_fasta = f"temp_{fasta_file.name}"
-    logger.info(f"Saving uploaded file to {os.path.abspath(temp_fasta)}")
+    logger.info(f"Saving uploaded file: {fasta_file.name} to {os.path.abspath(temp_fasta)}")
     try:
         with open(temp_fasta, "wb") as f:
             f.write(fasta_file.read())
@@ -42,7 +43,10 @@ if fasta_file:
             st.error(f"Failed to save {temp_fasta}")
             logger.error(f"Failed to save {temp_fasta}")
         else:
-            logger.info(f"Saved {temp_fasta}, size: {os.path.getsize(temp_fasta) / (1024 * 1024):.2f} MB")
+            file_size = os.path.getsize(temp_fasta) / (1024 * 1024)  # MB
+            logger.info(f"Saved {temp_fasta}, size: {file_size:.2f} MB")
+            if file_size < 1:
+                st.warning(f"Uploaded file is small ({file_size:.2f} MB). Verify the FASTA file.")
             
             # Run analysis
             try:
@@ -57,8 +61,10 @@ if fasta_file:
                     with open(blast_output, 'r') as f:
                         raw_hits = [line.strip().split('\t') for line in f if line.strip()]
                     hit_count = len(raw_hits)
+                    logger.info(f"Loaded {hit_count} raw BLAST hits from {blast_output}")
                 else:
                     hit_count = 0
+                    logger.warning(f"BLAST output {blast_output} not found")
                 
                 card_tsv = "card_database/aro_index.tsv"
                 gene_mappings = load_gene_mappings(card_tsv)
@@ -71,7 +77,7 @@ if fasta_file:
                     summary.to_csv(output_summary, index=False)
                     
                     # Display sortable table
-                    st.subheader("Resistance Genes Detected")
+                    st.subheader(f"Resistance Genes Detected ({len(df)})")
                     st.dataframe(
                         df[["Gene", "Antibiotic", "Percent_Identity", "Coverage", "Evalue"]]
                         .sort_values("Percent_Identity", ascending=False),
@@ -83,14 +89,14 @@ if fasta_file:
                     st.dataframe(summary, use_container_width=True)
                     
                     # Plot top 10 ARGs
-                    top_df = df.nlargest(10, 'Percent_Identity')
+                    top_df = df.nlargest(10, "Percent_Identity")
                     fig = px.bar(
                         top_df,
                         x="Gene",
                         y="Percent_Identity",
                         color="Antibiotic",
                         title="Top 10 Resistance Genes",
-                        height=500,
+                        height=plot_height,
                         text="Percent_Identity",
                         hover_data=["Coverage", "Evalue"],
                         labels={"Percent_Identity": "% Identity"}
@@ -124,7 +130,7 @@ if fasta_file:
                         st.dataframe(raw_df[["sseqid", "pident", "length", "evalue"]], use_container_width=True)
                     st.write("Check outputs/analysis.log or outputs/streamlit.log for details or try lowering thresholds.")
             except FileNotFoundError as e:
-                st.error(f"Error: {str(e)}")
+                st.error(f"Error: {str(e)}. Ensure the FASTA file name matches the uploaded file (e.g., GCA_ vs. GCF_).")
                 logger.error(f"Analysis error: {str(e)}")
             except ValueError as e:
                 st.warning(f"Error: {str(e)}")
