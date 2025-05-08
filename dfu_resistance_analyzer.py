@@ -7,13 +7,32 @@ from Bio import SeqIO
 import logging
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("outputs/analysis.log"),
+        logging.StreamHandler()
+    ]
+)
 logger = logging.getLogger(__name__)
+
+def validate_card_database(card_tsv, db_path):
+    """Validate CARD database integrity."""
+    if not os.path.exists(card_tsv):
+        raise FileNotFoundError(f"CARD index file {card_tsv} not found")
+    if not all(os.path.exists(f"{db_path}.{ext}") for ext in ["nhr", "nin", "nsq"]):
+        raise FileNotFoundError(f"BLAST database {db_path} incomplete")
+    tsv_size = os.path.getsize(card_tsv) / (1024 * 1024)  # MB
+    if tsv_size < 0.5:
+        raise ValueError(f"CARD index file {card_tsv} is too small ({tsv_size:.2f} MB)")
+    df = pd.read_csv(card_tsv, sep='\t')
+    if len(df) < 6000:
+        raise ValueError(f"CARD index contains only {len(df)} AROs; expected ~6439")
+    logger.info(f"CARD database validated: {len(df)} AROs, {tsv_size:.2f} MB")
 
 def load_gene_mappings(card_tsv):
     """Load CARD gene mappings from aro_index.tsv, handling duplicate AROs."""
-    if not os.path.exists(card_tsv):
-        raise FileNotFoundError(f"CARD index file {card_tsv} not found")
     df = pd.read_csv(card_tsv, sep='\t')
     if 'ARO Accession' not in df.columns or 'Model Name' not in df.columns or 'Drug Class' not in df.columns:
         raise ValueError("Invalid CARD index format: Missing required columns")
@@ -23,10 +42,17 @@ def load_gene_mappings(card_tsv):
 
 def run_blast(fasta_file, db_path, output_file):
     """Run BLASTn with error handling."""
+    cmd = [
+        "blastn", "-version"
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        if "2.12.0+" not in result.stdout:
+            raise RuntimeError(f"Unsupported BLAST version: {result.stdout}")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"BLAST version check failed: {e.stderr}")
     if not os.path.exists(fasta_file):
         raise FileNotFoundError(f"FASTA file {fasta_file} not found")
-    if not os.path.exists(db_path + ".nhr"):
-        raise FileNotFoundError(f"BLAST database {db_path} not found")
     cmd = [
         "blastn",
         "-query", fasta_file,
@@ -34,21 +60,27 @@ def run_blast(fasta_file, db_path, output_file):
         "-out", output_file,
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
         "-num_threads", "4",
-        "-max_target_seqs", "50"  # Increased to capture more hits
+        "-max_target_seqs", "100"
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        logger.info(f"BLAST completed: Output saved to {output_file}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        if os.path.exists(output_file):
+            hit_count = sum(1 for _ in open(output_file))
+            logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
+        else:
+            logger.error("BLAST output file not created")
+            raise RuntimeError("BLAST output file not created")
     except subprocess.CalledProcessError as e:
         logger.error(f"BLAST failed: {e.stderr}")
         raise RuntimeError(f"BLAST failed: {e.stderr}")
 
-def parse_blast_results(blast_file, gene_mappings):
+def parse_blast_results(blast_file, gene_mappings, min_identity=20.0, min_coverage=0.0):
     """Parse BLAST results and map to antibiotics."""
     if not os.path.exists(blast_file):
         raise FileNotFoundError(f"BLAST output {blast_file} not found")
     if os.path.getsize(blast_file) == 0:
-        raise ValueError("BLAST output is empty; no hits found")
+        logger.warning("BLAST output is empty; no hits found")
+        return pd.DataFrame()
     results = []
     total_hits = 0
     with open(blast_file, 'r') as f:
@@ -62,7 +94,7 @@ def parse_blast_results(blast_file, gene_mappings):
             qlen = int(fields[12])
             slen = int(fields[13])
             coverage = (int(fields[3]) / min(qlen, slen)) * 100
-            if pident >= 30 and coverage >= 5:  # Lowered thresholds
+            if pident >= min_identity and coverage >= min_coverage:
                 if aro in gene_mappings:
                     results.append({
                         'Gene': gene_mappings[aro]['Model Name'],
@@ -72,7 +104,7 @@ def parse_blast_results(blast_file, gene_mappings):
                         'Evalue': float(fields[10])
                     })
     df = pd.DataFrame(results)
-    logger.info(f"Parsed {total_hits} BLAST hits, found {len(df)} ARGs meeting thresholds (30% identity, 5% coverage)")
+    logger.info(f"Parsed {total_hits} BLAST hits, found {len(df)} ARGs with {min_identity}% identity, {min_coverage}% coverage")
     return df
 
 def plot_results(df, output_file):
@@ -106,17 +138,25 @@ def save_results(df, output_file):
     logger.info(f"Saved results: {output_file}, summary: {output_file.replace('.csv', '_summary.csv')}")
 
 def validate_fasta(fasta_file):
-    """Validate FASTA file format."""
+    """Validate FASTA file format and content."""
+    logger.info(f"Checking FASTA file: {fasta_file}, path: {os.path.abspath(fasta_file)}")
     try:
+        if not os.path.exists(fasta_file):
+            raise FileNotFoundError(f"FASTA file {fasta_file} not found")
+        if not os.access(fasta_file, os.R_OK):
+            raise PermissionError(f"FASTA file {fasta_file} not readable")
         with open(fasta_file, 'r') as f:
             records = list(SeqIO.parse(f, "fasta"))
         if not records:
             raise ValueError("FASTA file is empty or invalid")
-        logger.info(f"Validated FASTA: {fasta_file}, {len(records)} sequences")
+        total_length = sum(len(record.seq) for record in records)
+        if total_length < 1000:
+            raise ValueError(f"FASTA file too small: {total_length} bp")
+        logger.info(f"Validated FASTA: {fasta_file}, {len(records)} sequences, {total_length} bp")
         return True
     except Exception as e:
-        logger.error(f"Invalid FASTA format: {str(e)}")
-        raise ValueError(f"Invalid FASTA format: {str(e)}")
+        logger.error(f"Invalid FASTA: {str(e)}")
+        raise ValueError(f"Invalid FASTA: {str(e)}")
 
 def main(fasta_file=None):
     """Main function to run ARG detection."""
@@ -127,10 +167,11 @@ def main(fasta_file=None):
     
     # Validate inputs
     validate_fasta(fasta_file)
-    
-    # Paths
     card_tsv = "card_database/aro_index.tsv"
     db_path = "card_database/card_db"
+    validate_card_database(card_tsv, db_path)
+    
+    # Paths
     output_dir = "outputs"
     base_name = os.path.splitext(os.path.basename(fasta_file))[0]
     blast_output = f"{output_dir}/{base_name}_blast_results.txt"
@@ -147,15 +188,15 @@ def main(fasta_file=None):
     run_blast(fasta_file, db_path, blast_output)
     
     # Parse results
-    df = parse_blast_results(blast_output, gene_mappings)
+    df = parse_blast_results(blast_output, gene_mappings, min_identity=20.0, min_coverage=0.0)
     
     # Save results
     if not df.empty:
         save_results(df, csv_output)
         plot_results(df, plot_output)
     else:
-        logger.warning("No resistance genes detected. Consider lowering thresholds or checking input data.")
-        raise ValueError("No resistance genes detected with thresholds (30% identity, 5% coverage). Try lowering thresholds or verifying the FASTA file.")
+        logger.warning("No resistance genes detected with thresholds (20% identity, 0% coverage).")
+        raise ValueError("No resistance genes detected with thresholds (20% identity, 0% coverage). Check FASTA file, CARD database, or BLAST output in outputs/analysis.log.")
 
 if __name__ == "__main__":
     main()
