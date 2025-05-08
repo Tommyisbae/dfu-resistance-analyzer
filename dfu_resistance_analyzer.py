@@ -16,6 +16,7 @@ def load_aro_mappings(aro_file):
         gene = row['Model Name']
         antibiotic = row.get('Drug Class', 'Unknown')
         mappings[aro] = {'gene': gene, 'antibiotic': antibiotic}
+    print(f"Loaded {len(mappings)} gene mappings")
     return mappings
 
 def run_blast(fasta_file, db_path, output_file):
@@ -116,17 +117,18 @@ def main():
     fasta_file = sys.argv[1]
     aro_file = 'card_database/aro_index.tsv'
     db_path = 'card_database/card_db'
-    blast_output = 'outputs/blast_results.txt'
-    report_output = 'outputs/resistance_report.csv'
-    plot_output = 'outputs/resistance_plot.png'
     
-    # Create outputs directory
-    os.makedirs('outputs', exist_ok=True)
+    # Derive output filenames from input FASTA
+    base_name = os.path.splitext(os.path.basename(fasta_file))[0]
+    output_dir = 'outputs'
+    os.makedirs(output_dir, exist_ok=True)
+    blast_output = os.path.join(output_dir, f'{base_name}_blast_results.txt')
+    report_output = os.path.join(output_dir, f'{base_name}_report.csv')
+    plot_output = os.path.join(output_dir, f'{base_name}_plot.png')
     
     # Load ARO mappings
     print(f"Loading gene mappings from {aro_file}")
     mappings = load_aro_mappings(aro_file)
-    print(f"Loaded {len(mappings)} gene mappings")
     
     # Run BLAST
     print(f"Running BLAST against {db_path}")
