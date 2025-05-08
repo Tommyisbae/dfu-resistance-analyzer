@@ -66,8 +66,8 @@ if fasta_file:
                 output_csv = f"outputs/{os.path.splitext(fasta_file.name)[0]}_report.csv"
                 output_summary = output_csv.replace(".csv", "_summary.csv")
                 blast_output = f"outputs/{os.path.splitext(fasta_file.name)[0]}_blast_results.txt"
-                plot_html = output_csv.replace(".csv", "_plot.html")
-                plot_png = output_csv.replace(".csv", "_plot.png")
+                plot_html = f"outputs/{os.path.splitext(fasta_file.name)[0]}_plot.html"
+                plot_png = f"outputs/{os.path.splitext(fasta_file.name)[0]}_plot.png"
                 
                 # Load raw BLAST hits
                 raw_hits = []
@@ -124,10 +124,20 @@ if fasta_file:
                     fig.update_layout(xaxis_tickangle=45)
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Check PNG plot
+                    # Check plot files
                     if not os.path.exists(plot_png):
-                        st.warning("PNG plot generation failed. Using interactive HTML plot.")
+                        st.warning("PNG plot generation failed.")
                         logger.warning(f"PNG plot missing: {plot_png}")
+                    if not os.path.exists(plot_html):
+                        st.warning("HTML plot generation failed. Displaying interactive plot above.")
+                        logger.warning(f"HTML plot missing: {plot_html}")
+                    else:
+                        st.download_button(
+                            label="Download Plot (HTML)",
+                            data=open(plot_html, "rb").read(),
+                            file_name=f"{os.path.splitext(fasta_file.name)[0]}_plot.html",
+                            mime="text/html"
+                        )
                     
                     # Download buttons
                     st.download_button(
@@ -135,12 +145,6 @@ if fasta_file:
                         data=df.to_csv(index=False),
                         file_name=f"{os.path.splitext(fasta_file.name)[0]}_report.csv",
                         mime="text/csv"
-                    )
-                    st.download_button(
-                        label="Download Plot (HTML)",
-                        data=open(plot_html, "rb").read(),
-                        file_name=f"{os.path.splitext(fasta_file.name)[0]}_plot.html",
-                        mime="text/html"
                     )
                     # PDF export
                     if REPORTLAB_AVAILABLE:
@@ -180,7 +184,7 @@ if fasta_file:
                         st.dataframe(raw_df[["sseqid", "pident", "length", "evalue"]], use_container_width=True)
                     st.write("Check outputs/analysis.log or outputs/streamlit.log for details or try lowering thresholds.")
             except FileNotFoundError as e:
-                st.error(f"Error: {str(e)}. Ensure the FASTA file name matches the uploaded file (e.g., GCA_ vs. GCF_).")
+                st.error(f"Error: {str(e)}. Check logs at outputs/analysis.log or outputs/streamlit.log.")
                 logger.error(f"Analysis error: {str(e)}")
             except TimeoutError as e:
                 st.error(f"Error: BLAST execution timed out after 1 hour. Try a smaller FASTA file or contact support.")

@@ -131,15 +131,17 @@ def plot_results(df, output_file):
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
     fig.update_layout(xaxis_tickangle=45)
     html_file = output_file.replace(".png", ".html")
-    fig.write_html(html_file)
-    logger.info(f"Generated HTML plot: {html_file}")
+    try:
+        fig.write_html(html_file)
+        logger.info(f"Generated HTML plot: {html_file}")
+    except Exception as e:
+        logger.error(f"Failed to generate HTML plot: {str(e)}")
+        raise RuntimeError(f"Failed to generate HTML plot: {str(e)}")
     try:
         fig.write_image(output_file, format="png")
         logger.info(f"Generated PNG plot: {output_file}")
     except Exception as e:
-        logger.warning(f"Failed to generate PNG plot: {str(e)}. Using HTML plot only.")
-        if not os.path.exists(html_file):
-            raise RuntimeError("Failed to generate both PNG and HTML plots")
+        logger.warning(f"Failed to generate PNG plot: {str(e)}. HTML plot available at {html_file}")
 
 def save_results(df, output_file):
     """Save results to CSV and summary table."""
