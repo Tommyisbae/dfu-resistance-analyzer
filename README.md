@@ -1,48 +1,73 @@
-DFU Resistance Analyzer
-Fast, accurate antibiotic resistance gene detection for diabetic foot ulcer (DFU) pathogens.
-The Problem
-Diabetic foot ulcers (DFUs) affect 15% of diabetic patients, costing healthcare systems $10 billion annually. Antibiotic resistance in pathogens like Staphylococcus aureus and Klebsiella pneumoniae drives treatment failures, prolonged hospital stays, and amputations. Identifying resistance profiles quickly is critical but often takes days or weeks.
-The Solution
-DFU Resistance Analyzer is a Python-based bioinformatics tool that maps antibiotic resistance genes (ARGs) in DFU bacterial genomes within hours. Using BLAST and the Comprehensive Antibiotic Resistance Database (CARD), it delivers precise, actionable profiles to guide researchers and clinicians in selecting effective antibiotics, reducing trial-and-error by ~30%.
-Features
+# DFU Resistance Analyzer
 
-Comprehensive ARG Detection: Dynamically identifies ~6400 ARGs from CARD, with no hardcoded genes.
-Genome-Specific Outputs: Generates CSVs, plots, and BLAST results (e.g., GCA_000013425.1_ASM1342v1_genomic_report.csv).
-Optimized Pipeline: Fast BLASTn with 50% identity and 10% coverage filters for reliable hits.
-DFU-Focused: Tailored for key pathogens driving DFU infections.
+A tool for detecting antibiotic resistance genes using the CARD database, designed to rival ResFinder.
 
-Demo
-Coming soon: Try the interactive Streamlit Web App to upload FASTA files and explore ARG profiles.
-Screenshots
-Interactive plot of resistance genes by antibiotic class.
-CSV report with gene, antibiotic, and identity metrics.
-Installation
-git clone https://github.com/tommyisbae/dfu-resistance-analyzer.git
-cd dfu-resistance-analyzer
-python3 -m venv kraken_venv
-source kraken_venv/bin/activate
-pip install biopython pandas seaborn matplotlib
-sudo apt update && sudo apt install ncbi-blast+
-wget https://card.mcmaster.ca/latest/data -O card-data.tar.bz2
-tar -xjf card-data.tar.bz2 -C card_database
-cd card_database
-makeblastdb -in nucleotide_fasta_protein_homolog_model.fasta -dbtype nucl -out card_db
-cd ..
+## Setup
 
-Usage
-python dfu_resistance_analyzer.py GCA_000013425.1_ASM1342v1_genomic.fna
+### Windows Setup
+1. **Install Conda**:
+   - Download and install Miniconda or Anaconda for Windows: https://docs.conda.io/en/latest/miniconda.html
+   - Open Anaconda Prompt and create an environment:
+     ```
+     conda create -n dfu_analyzer python=3.9
+     conda activate dfu_analyzer
+     ```
+2. **Install BLAST+**:
+   - Download BLAST+ from NCBI: https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/
+   - Install and add the BLAST+ bin directory (e.g., `C:\Program Files\NCBI\blast-<version>\bin`) to your PATH:
+     - Right-click 'This PC' → Properties → Advanced system settings → Environment Variables → Edit 'Path' → Add the bin directory.
+3. **Clone the Repository**:
+   ```
+   git clone <repo-url>
+   cd dfu-resistance-analyzer
+   ```
+4. **Install Dependencies**:
+   ```
+   pip install -r requirements.txt
+   ```
+   - Optional: For PDF export, install reportlab:
+     ```
+     pip install reportlab
+     ```
+5. **Set Up CARD Database**:
+   - Ensure the CARD database (`card_database/`) is present with `aro_index.tsv` and BLAST database files (`card_db.*`).
 
-Example Results
+### Linux/WSL Setup
+1. **Install Conda**:
+   - Follow the Linux instructions for Miniconda: https://docs.conda.io/en/latest/miniconda.html
+   - Create an environment:
+     ```
+     conda create -n dfu_analyzer python=3.9
+     conda activate dfu_analyzer
+     ```
+2. **Install BLAST+**:
+   - Install BLAST+ (e.g., on Ubuntu: `sudo apt-get install ncbi-blast+`).
+3. **Clone and Install**:
+   ```
+   git clone <repo-url>
+   cd dfu-resistance-analyzer
+   pip install -r requirements.txt
+   ```
+4. **Set Up CARD Database**:
+   - Ensure the CARD database is in `card_database/`.
 
-S. aureus (GCA_000013425.1): 12 ARGs, including tet(38) (tetracycline), Saur_norA (fluoroquinolone).
-Klebsiella pneumoniae (GCA_048961785.1): 49 ARGs, including KPC-2 (carbapenem), CTX-M-15 (cephalosporin).
+## Usage
+1. Activate environment:
+   - Windows: `conda activate dfu_analyzer` (Anaconda Prompt)
+   - Linux/WSL: `conda activate dfu_analyzer`
+2. Run the app:
+   ```
+   streamlit run app.py
+   ```
+3. Upload a FASTA file (e.g., `inputs/SRR25645458.fasta`).
+4. Adjust thresholds and plot settings as needed.
 
-Contact
+## Outputs
+- Results: `~/dfu_outputs/<sample>_report.csv` (Windows: `C:\Users\<USER>\dfu_outputs`)
+- Plot: `~/dfu_outputs/<sample>_plot.html/png`
 
-Email: ariyibitomiwa611@gmail.com
+## Features
+- Uses CARD database (6,439 AROs) for comprehensive ARG detection.
+- Adjustable thresholds (default: 90% identity, 80% coverage).
+- User-friendly plot with customizable dimensions.
 
-
-License
-MIT License
-Contributing
-We welcome contributions! Please see CONTRIBUTING.md for guidelines.
