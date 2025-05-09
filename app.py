@@ -7,7 +7,7 @@ import tempfile
 import re
 import shutil
 import psutil
-from dfu_resistance_analyzer import main as run_analysis, parse_blast_results, load_gene_mappings
+from dfu_resistance_analyzer import main as run_analysis, parse_blast_results, load_gene_mappings, plot_results
 import io
 
 # Attempt to import reportlab for PDF export
@@ -80,8 +80,8 @@ elif preset == "Moderate (70%, 60%)":
     identity_threshold, coverage_threshold = 70.0, 60.0
 else:
     identity_threshold, coverage_threshold = 50.0, 40.0
-plot_height = st.sidebar.slider("Plot Height", 400, 800, 500)
-plot_title = st.sidebar.text_input("Plot Title", "Top 10 Resistance Genes")
+plot_height = st.sidebar.slider("Plot Height", 400, 1000, 600)  # Increased default and max
+plot_width = st.sidebar.slider("Plot Width", 600, 1200, 800)    # Added width control
 
 # Environment check
 try:
@@ -174,20 +174,10 @@ if fasta_file:
                         st.subheader("Summary by Antibiotic")
                         st.dataframe(summary, use_container_width=True)
                         
+                        # Generate plot with user-defined dimensions
                         top_df = df.nlargest(10, "Percent_Identity")
-                        fig = px.bar(
-                            top_df,
-                            x="Gene",
-                            y="Percent_Identity",
-                            color="Antibiotic",
-                            title=plot_title,
-                            height=plot_height,
-                            text="Percent_Identity",
-                            hover_data=["Coverage", "Evalue"],
-                            labels={"Percent_Identity": "% Identity"}
-                        )
-                        fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
-                        fig.update_layout(xaxis_tickangle=45)
+                        fig = plot_results(df, plot_png)  # Use plot_results to generate the figure
+                        fig.update_layout(height=plot_height, width=plot_width)  # Apply user-defined dimensions
                         st.plotly_chart(fig, use_container_width=True)
                         
                         if not os.path.exists(plot_png):

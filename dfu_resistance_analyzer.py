@@ -212,13 +212,21 @@ def plot_results(df, output_file):
         y="Percent_Identity",
         color="Antibiotic",
         title="Top 10 Resistance Genes",
-        height=500,
+        height=600,  # Increased height
+        width=800,   # Set a reasonable width
         text="Percent_Identity",
         hover_data=["Coverage", "Evalue"],
         labels={"Percent_Identity": "% Identity"}
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
-    fig.update_layout(xaxis_tickangle=45)
+    fig.update_layout(
+        xaxis_tickangle=45,
+        font=dict(size=14),  # Increase font size for readability
+        title_font_size=18,
+        xaxis_title_font_size=16,
+        yaxis_title_font_size=16,
+        margin=dict(l=50, r=50, t=80, b=100)  # Adjust margins for better spacing
+    )
     html_file = output_file.replace(".png", ".html")
     try:
         fig.write_html(html_file)
@@ -231,7 +239,8 @@ def plot_results(df, output_file):
         logger.info(f"Generated PNG plot: {output_file}")
     except Exception as e:
         logger.warning(f"Failed to generate PNG plot: {str(e)}. HTML plot available at {html_file}")
-
+    return fig  # Return the figure for Streamlit rendering
+    
 def save_results(df, output_file):
     """Save results to CSV and summary table."""
     output_file = os.path.abspath(output_file)
