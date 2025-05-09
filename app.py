@@ -20,12 +20,16 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
     logging.warning("reportlab not installed; PDF export disabled")
 
+# Ensure output directory exists before setting up logging
+output_dir = os.path.expanduser("~/dfu_outputs")
+os.makedirs(output_dir, exist_ok=True)
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("outputs/streamlit.log"),
+        logging.FileHandler(os.path.join(output_dir, "streamlit.log")),
         logging.StreamHandler()
     ]
 )
@@ -69,13 +73,13 @@ st.markdown("Upload a bacterial genome FASTA file to detect antibiotic resistanc
 
 # Threshold settings
 st.sidebar.header("Analysis Settings")
-preset = st.sidebar.selectbox("Threshold Preset", ["Lenient (20%, 0%)", "Moderate (30%, 5%)", "Strict (50%, 10%)"])
-if preset == "Lenient (20%, 0%)":
-    identity_threshold, coverage_threshold = 20.0, 0.0
-elif preset == "Moderate (30%, 5%)":
-    identity_threshold, coverage_threshold = 30.0, 5.0
+preset = st.sidebar.selectbox("Threshold Preset", ["Strict (90%, 80%)", "Moderate (70%, 60%)", "Lenient (50%, 40%)"])
+if preset == "Strict (90%, 80%)":
+    identity_threshold, coverage_threshold = 90.0, 80.0
+elif preset == "Moderate (70%, 60%)":
+    identity_threshold, coverage_threshold = 70.0, 60.0
 else:
-    identity_threshold, coverage_threshold = 50.0, 10.0
+    identity_threshold, coverage_threshold = 50.0, 40.0
 plot_height = st.sidebar.slider("Plot Height", 400, 800, 500)
 plot_title = st.sidebar.text_input("Plot Title", "Top 10 Resistance Genes")
 
@@ -90,16 +94,14 @@ except Exception as e:
 # File upload
 fasta_file = st.file_uploader("Choose FASTA file", type=["fna", "fasta"], accept_multiple_files=False)
 if fasta_file:
-    if not fasta_file.name.lower().endswith(".fna"):
-        st.warning("File does not end with .fna. Ensure it’s a valid FASTA file.")
+    if not fasta_file.name.lower().endswith((".fna", ".fasta")):
+        st.warning("File does not end with .fna or .fasta. Ensure it’s a valid FASTA file.")
     
-    # Use temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_fasta = os.path.join(temp_dir, f"temp_{sanitize_filename(fasta_file.name)}")
-        output_dir = os.path.abspath("outputs")
+        output_dir = os.path.expanduser("~/dfu_outputs")
         logger.info(f"Saving uploaded file: {fasta_file.name} to {temp_fasta}")
         try:
-            # Ensure output directory exists and is writable
             os.makedirs(output_dir, exist_ok=True)
             if not os.access(output_dir, os.W_OK):
                 st.error(f"No write permission for output directory {output_dir}")
@@ -124,11 +126,9 @@ if fasta_file:
                 logger.error(f"No read permission for {temp_fasta}")
                 raise PermissionError(f"No read permission for {temp_fasta}")
             
-            # Log first few lines of FASTA
             with open(temp_fasta, "r") as f:
                 logger.info(f"FASTA content (first 500 chars): {f.read(500)}...")
             
-            # Run analysis
             with st.spinner("Running BLAST analysis..."):
                 try:
                     run_analysis(temp_fasta)
@@ -141,7 +141,6 @@ if fasta_file:
                     
                     logger.info(f"Expected output files: {blast_output}, {output_csv}, {plot_html}, {plot_png}")
                     
-                    # Load raw BLAST hits
                     raw_hits = []
                     if os.path.exists(blast_output):
                         with open(blast_output, 'r') as f:
@@ -157,17 +156,14 @@ if fasta_file:
                     df = parse_blast_results(blast_output, gene_mappings, min_identity=identity_threshold, min_coverage=coverage_threshold)
                     
                     if not df.empty:
-                        # Antibiotic filter
                         antibiotics = sorted(df["Antibiotic"].unique())
                         selected_antibiotic = st.multiselect("Filter by Antibiotic Class", antibiotics, default=antibiotics)
                         df = df[df["Antibiotic"].isin(selected_antibiotic)]
                         
-                        # Save filtered results
                         df.to_csv(output_csv, index=False)
                         summary = df.groupby("Antibiotic").size().reset_index(name="ARG_Count")
                         summary.to_csv(output_summary, index=False)
                         
-                        # Display sortable table
                         st.subheader(f"Resistance Genes Detected ({len(df)})")
                         st.dataframe(
                             df[["Gene", "Antibiotic", "Percent_Identity", "Coverage", "Evalue"]]
@@ -175,11 +171,9 @@ if fasta_file:
                             use_container_width=True
                         )
                         
-                        # Display summary table
                         st.subheader("Summary by Antibiotic")
                         st.dataframe(summary, use_container_width=True)
                         
-                        # Plot top 10 ARGs
                         top_df = df.nlargest(10, "Percent_Identity")
                         fig = px.bar(
                             top_df,
@@ -196,7 +190,6 @@ if fasta_file:
                         fig.update_layout(xaxis_tickangle=45)
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # Check plot files
                         if not os.path.exists(plot_png):
                             st.warning("PNG plot generation failed.")
                             logger.warning(f"PNG plot missing: {plot_png}")
@@ -217,14 +210,12 @@ if fasta_file:
                                 mime="image/png"
                             )
                         
-                        # Download buttons
                         st.download_button(
                             label="Download Report (CSV)",
                             data=df.to_csv(index=False),
                             file_name=f"{base_name}_report.csv",
                             mime="text/csv"
                         )
-                        # PDF export
                         if REPORTLAB_AVAILABLE:
                             pdf_buffer = io.BytesIO()
                             doc = SimpleDocTemplate(pdf_buffer, pagesize=letter)
@@ -260,9 +251,8 @@ if fasta_file:
                                 columns=["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen", "qstart", "qend", "sstart", "send", "evalue", "bitscore", "qlen", "slen"]
                             )
                             st.dataframe(raw_df[["sseqid", "pident", "length", "evalue"]], use_container_width=True)
-                        st.write("Check outputs/analysis.log or outputs/streamlit.log for details or try lowering thresholds.")
+                        st.write("Check ~/dfu_outputs/streamlit.log or ~/dfu_outputs/analysis.log for details or try lowering thresholds.")
                     
-                    # Debug info
                     if st.checkbox("Show Debug Info"):
                         st.write("**Debug Info**")
                         st.write(f"Uploaded File: {fasta_file.name}")
@@ -270,17 +260,16 @@ if fasta_file:
                         st.write(f"BLAST Hits: {hit_count}")
                         st.write(f"Output Files: {output_csv}, {blast_output}, {plot_html}")
                         st.write(f"Environment: {shutil.which('blastn')}, {mem.available / (1024 * 1024)} MB free, {os.cpu_count()} CPUs")
-                        st.write(f"Log Files: outputs/streamlit.log, outputs/analysis.log")
                         try:
-                            with open("outputs/streamlit.log", "r") as f:
+                            with open(os.path.join(output_dir, "streamlit.log"), "r") as f:
                                 st.text(f"Streamlit Log (last 20 lines):\n{f.read()[-1000:]}")
-                            with open("outputs/analysis.log", "r") as f:
+                            with open(os.path.join(output_dir, "analysis.log"), "r") as f:
                                 st.text(f"Analysis Log (last 20 lines):\n{f.read()[-1000:]}")
                         except Exception as e:
                             st.warning(f"Failed to read logs: {str(e)}")
                 
                 except FileNotFoundError as e:
-                    st.error(f"Error: {str(e)}. Check logs at outputs/analysis.log or outputs/streamlit.log.")
+                    st.error(f"Error: {str(e)}. Check logs at ~/dfu_outputs/streamlit.log or ~/dfu_outputs/analysis.log.")
                     logger.error(f"Analysis error: {str(e)}")
                 except TimeoutError as e:
                     st.error(f"Error: BLAST execution timed out after 1 hour. Try a smaller FASTA file or contact support.")
@@ -289,7 +278,7 @@ if fasta_file:
                     st.warning(f"Error: {str(e)}")
                     logger.warning(f"Analysis warning: {str(e)}")
                 except Exception as e:
-                    st.error(f"Unexpected error: {str(e)}. Check outputs/streamlit.log.")
+                    st.error(f"Unexpected error: {str(e)}. Check ~/dfu_outputs/streamlit.log.")
                     logger.error(f"Unexpected error: {str(e)}")
         
         except Exception as e:

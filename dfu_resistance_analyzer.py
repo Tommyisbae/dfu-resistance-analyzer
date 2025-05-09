@@ -10,12 +10,16 @@ import shutil
 import tempfile
 import psutil
 
+# Ensure output directory exists before setting up logging
+output_dir = os.path.expanduser("~/dfu_outputs")
+os.makedirs(output_dir, exist_ok=True)
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("outputs/analysis.log"),
+        logging.FileHandler(os.path.join(output_dir, "analysis.log")),
         logging.StreamHandler()
     ]
 )
@@ -101,15 +105,15 @@ def run_blast(fasta_file, db_path, output_file):
         logger.error(f"No write permission for output directory {output_dir}")
         raise PermissionError(f"No write permission for output directory {output_dir}")
     
-    # Primary BLAST command
     cmd = [
         blast_path,
         "-query", fasta_file,
         "-db", db_path,
         "-out", output_file,
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
-        "-num_threads", "4",
-        "-max_target_seqs", "100"
+        "-num_threads", str(os.cpu_count()),  # Use all available CPUs
+        "-max_target_seqs", "1000",  # Increase to capture more hits
+        "-evalue", "1e-10"  # Stricter E-value threshold
     ]
     
     for attempt in range(3):
@@ -121,7 +125,6 @@ def run_blast(fasta_file, db_path, output_file):
             if os.path.exists(output_file):
                 hit_count = sum(1 for _ in open(output_file))
                 logger.info(f"BLAST completed: {hit_count} hits in {output_file}")
-                # Log first few lines of output
                 with open(output_file, "r") as f:
                     logger.info(f"BLAST output (first 500 chars): {f.read(500)}...")
                 return
@@ -135,15 +138,7 @@ def run_blast(fasta_file, db_path, output_file):
         except subprocess.CalledProcessError as e:
             logger.error(f"BLAST attempt {attempt + 1} failed: {e.stderr}")
             if attempt == 2:
-                # Try fallback command
-                logger.info("Trying fallback BLAST command")
-                cmd = [
-                    blast_path,
-                    "-query", fasta_file,
-                    "-db", db_path,
-                    "-out", output_file,
-                    "-outfmt", "6"
-                ]
+                cmd = [blast_path, "-query", fasta_file, "-db", db_path, "-out", output_file, "-outfmt", "6"]
                 try:
                     logger.info(f"Running fallback BLAST: {' '.join(cmd)}")
                     result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
@@ -165,11 +160,10 @@ def run_blast(fasta_file, db_path, output_file):
             if attempt == 2:
                 raise RuntimeError(f"BLAST failed: {str(e)}")
 
-def parse_blast_results(blast_file, gene_mappings, min_identity=20.0, min_coverage=0.0):
+def parse_blast_results(blast_file, gene_mappings, min_identity=90.0, min_coverage=80.0):
     """Parse BLAST results and map to antibiotics."""
     blast_file = os.path.abspath(blast_file)
     if not os.path.exists(blast_file):
-        # Check for temp_ prefixed file as fallback
         temp_blast_file = os.path.join(os.path.dirname(blast_file), f"temp_{os.path.basename(blast_file)}")
         if os.path.exists(temp_blast_file):
             logger.warning(f"BLAST output {blast_file} not found, using {temp_blast_file}")
@@ -220,7 +214,8 @@ def plot_results(df, output_file):
         title="Top 10 Resistance Genes",
         height=500,
         text="Percent_Identity",
-        hover_data=["Coverage", "Evalue"]
+        hover_data=["Coverage", "Evalue"],
+        labels={"Percent_Identity": "% Identity"}
     )
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
     fig.update_layout(xaxis_tickangle=45)
@@ -278,43 +273,29 @@ def main(fasta_file=None):
             raise ValueError("No FASTA file provided. Usage: python dfu_resistance_analyzer.py <fasta_file>")
         fasta_file = sys.argv[1]
     
-    # Check environment
     check_environment()
-    
-    # Validate inputs
     validate_fasta(fasta_file)
     card_tsv = os.path.abspath("card_database/aro_index.tsv")
     db_path = os.path.abspath("card_database/card_db")
     validate_card_database(card_tsv, db_path)
     
-    # Sanitize file name
     base_name = sanitize_filename(os.path.splitext(os.path.basename(fasta_file))[0])
-    
-    # Paths
-    output_dir = os.path.abspath("outputs")
+    output_dir = os.path.expanduser("~/dfu_outputs")
     blast_output = os.path.join(output_dir, f"{base_name}_blast_results.txt")
     csv_output = os.path.join(output_dir, f"{base_name}_report.csv")
     plot_output = os.path.join(output_dir, f"{base_name}_plot.png")
     
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    
-    # Load CARD mappings
     gene_mappings = load_gene_mappings(card_tsv)
-    
-    # Run BLAST
     run_blast(fasta_file, db_path, blast_output)
+    df = parse_blast_results(blast_output, gene_mappings, min_identity=90.0, min_coverage=80.0)
     
-    # Parse results
-    df = parse_blast_results(blast_output, gene_mappings, min_identity=20.0, min_coverage=0.0)
-    
-    # Save results
     if not df.empty:
         save_results(df, csv_output)
         plot_results(df, plot_output)
     else:
-        logger.warning("No resistance genes detected with thresholds (20% identity, 0% coverage).")
-        raise ValueError("No resistance genes detected with thresholds (20% identity, 0% coverage). Check FASTA file, CARD database, or BLAST output in outputs/analysis.log.")
+        logger.warning("No resistance genes detected with thresholds (90% identity, 80% coverage).")
+        raise ValueError("No resistance genes detected with thresholds (90% identity, 80% coverage). Check FASTA file, CARD database, or BLAST output in ~/dfu_outputs/analysis.log.")
 
 if __name__ == "__main__":
     main()
