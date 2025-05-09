@@ -88,7 +88,7 @@ except Exception as e:
     st.stop()
 
 # File upload
-fasta_file = st.file_uploader("Choose FASTA file", type=["fna"], accept_multiple_files=False)
+fasta_file = st.file_uploader("Choose FASTA file", type=["fna", "fasta"], accept_multiple_files=False)
 if fasta_file:
     if not fasta_file.name.lower().endswith(".fna"):
         st.warning("File does not end with .fna. Ensure it’s a valid FASTA file.")

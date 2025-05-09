@@ -10,6 +10,8 @@ Brotli @ file:///croot/brotli-split_1736182456865/work
 cachetools==5.5.2
 certifi @ file:///croot/certifi_1745939216646/work/certifi
 cffi @ file:///croot/cffi_1736182485317/work
+cgecore==2.0.1
+cgelib==0.7.5
 chardet==5.2.0
 charset-normalizer @ file:///croot/charset-normalizer_1721748349566/work
 click==8.1.8
@@ -30,6 +32,7 @@ gitdb==4.0.12
 GitPython==3.1.44
 idna @ file:///work/perseverance-python-buildout/croot/idna_1728385935861/work
 Jinja2==3.1.6
+joblib==1.5.0
 jsonpatch @ file:///work/perseverance-python-buildout/croot/jsonpatch_1728399595941/work
 jsonpointer==2.1
 jsonschema==4.23.0
@@ -64,18 +67,22 @@ pyparsing==3.2.3
 PySocks @ file:///work/perseverance-python-buildout/croot/pysocks_1728386193338/work
 python-dateutil==2.9.0.post0
 pytz==2025.2
+quast==5.2.0
 referencing==0.36.2
 reportlab==4.4.0
 requests @ file:///croot/requests_1730999120400/work
+resfinder==4.7.2
 rich @ file:///croot/rich_1732638981168/work
 rpds-py==0.24.0
 ruamel.yaml @ file:///croot/ruamel.yaml_1745960305322/work
 ruamel.yaml.clib @ file:///croot/ruamel.yaml.clib_1745937152469/work
 seaborn==0.13.2
 setuptools==78.1.1
+simplejson==3.20.1
 six==1.17.0
 smmap==5.0.2
 streamlit==1.45.0
+tabulate==0.9.0
 tenacity==9.1.2
 toml==0.10.2
 tornado==6.4.2
