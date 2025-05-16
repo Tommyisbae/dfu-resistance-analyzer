@@ -20,7 +20,9 @@ def debug_blast(fasta_file, db_path, output_file, card_tsv):
     possible_paths = [
         fasta_file,
         os.path.join(os.getcwd(), fasta_file),
-        os.path.join(os.getcwd(), "data", fasta_file)
+        os.path.join(os.getcwd(), "data", fasta_file),
+        fasta_file.replace("GCF_", "GCA_"),
+        fasta_file.replace("GCA_", "GCF_")
     ]
     fasta_path = None
     for path in possible_paths:
@@ -33,6 +35,7 @@ def debug_blast(fasta_file, db_path, output_file, card_tsv):
     if not all(os.path.exists(f"{db_path}.{ext}") for ext in ["nhr", "nin", "nsq"]):
         logger.error(f"BLAST database {db_path} incomplete")
         return
+    logger.info(f"Using FASTA file: {fasta_path}")
     cmd = [
         "blastn",
         "-query", fasta_path,

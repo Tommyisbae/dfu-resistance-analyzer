@@ -10,16 +10,19 @@ import shutil
 import tempfile
 import psutil
 
-# Ensure output directory exists before setting up logging
-output_dir = os.path.expanduser("~/dfu_outputs")
-os.makedirs(output_dir, exist_ok=True)
+# Get environment variables for paths
+CARD_DATABASE_PATH = os.getenv("CARD_DATABASE_PATH", "/app/card_database")
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/tmp/dfu_outputs")
 
-# Setup logging
+# Ensure output directory exists before setting up logging
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Setup logging (avoid sensitive data)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(os.path.join(output_dir, "analysis.log")),
+        logging.FileHandler(os.path.join(OUTPUT_DIR, "analysis.log")),
         logging.StreamHandler()
     ]
 )
@@ -71,7 +74,7 @@ def check_environment():
     return blast_path
 
 def run_blast(fasta_file, db_path, output_file):
-    """Run BLASTn with error handling and fallback."""
+    """Run BLASTn with error handling, fallback, and timeout."""
     blast_path = check_environment()
     fasta_file = os.path.abspath(fasta_file)
     db_path = os.path.abspath(db_path)
@@ -79,13 +82,17 @@ def run_blast(fasta_file, db_path, output_file):
     
     cmd = [blast_path, "-version"]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        if "2.12.0+" not in result.stdout:
-            raise RuntimeError(f"Unsupported BLAST version: {result.stdout}")
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+        if not result.stdout.startswith("blastn: 2."):
+            logger.error(f"Unsupported BLAST version: {result.stdout}. Requires BLAST 2.x")
+            raise RuntimeError(f"Unsupported BLAST version: {result.stdout}. Requires BLAST 2.x")
         logger.info(f"BLAST version: {result.stdout.strip()}")
     except subprocess.CalledProcessError as e:
         logger.error(f"BLAST version check failed: {e.stderr}")
         raise RuntimeError(f"BLAST version check failed: {e.stderr}")
+    except subprocess.TimeoutExpired:
+        logger.error("BLAST version check timed out after 30 seconds")
+        raise TimeoutError("BLAST version check timed out after 30 seconds")
     
     if not os.path.exists(fasta_file):
         logger.error(f"FASTA file {fasta_file} not found")
@@ -111,15 +118,15 @@ def run_blast(fasta_file, db_path, output_file):
         "-db", db_path,
         "-out", output_file,
         "-outfmt", "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qlen slen",
-        "-num_threads", str(os.cpu_count()),  # Use all available CPUs
-        "-max_target_seqs", "1000",  # Increase to capture more hits
-        "-evalue", "1e-10"  # Stricter E-value threshold
+        "-num_threads", str(os.cpu_count()),
+        "-max_target_seqs", "500",
+        "-evalue", "1e-10"
     ]
     
     for attempt in range(3):
         try:
             logger.info(f"Running BLAST attempt {attempt + 1} for {fasta_file}: {' '.join(cmd)}")
-            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=1800)  # 30 minutes
             logger.info(f"BLAST stdout: {result.stdout[:1000] if result.stdout else 'No stdout'}...")
             logger.info(f"BLAST stderr: {result.stderr[:1000] if result.stderr else 'No stderr'}...")
             if os.path.exists(output_file):
@@ -134,14 +141,14 @@ def run_blast(fasta_file, db_path, output_file):
         except subprocess.TimeoutExpired:
             logger.warning(f"BLAST timed out on attempt {attempt + 1}")
             if attempt == 2:
-                raise TimeoutError("BLAST execution timed out after 3 attempts")
+                raise TimeoutError("BLAST execution timed out after 3 attempts (30 minutes each)")
         except subprocess.CalledProcessError as e:
             logger.error(f"BLAST attempt {attempt + 1} failed: {e.stderr}")
             if attempt == 2:
                 cmd = [blast_path, "-query", fasta_file, "-db", db_path, "-out", output_file, "-outfmt", "6"]
                 try:
                     logger.info(f"Running fallback BLAST: {' '.join(cmd)}")
-                    result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=3600)
+                    result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=1800)
                     logger.info(f"Fallback BLAST stdout: {result.stdout[:1000] if result.stdout else 'No stdout'}...")
                     logger.info(f"Fallback BLAST stderr: {result.stderr[:1000] if result.stderr else 'No stderr'}...")
                     if os.path.exists(output_file):
@@ -152,6 +159,9 @@ def run_blast(fasta_file, db_path, output_file):
                         return
                     else:
                         raise RuntimeError(f"Fallback BLAST output file {output_file} not created")
+                except subprocess.TimeoutExpired:
+                    logger.error("Fallback BLAST timed out after 30 minutes")
+                    raise TimeoutError("Fallback BLAST timed out after 30 minutes")
                 except Exception as e:
                     logger.error(f"Fallback BLAST failed: {str(e)}")
                     raise RuntimeError(f"Fallback BLAST failed: {str(e)}")
@@ -186,7 +196,11 @@ def parse_blast_results(blast_file, gene_mappings, min_identity=90.0, min_covera
             pident = float(fields[2])
             qlen = int(fields[12])
             slen = int(fields[13])
-            coverage = (int(fields[3]) / min(qlen, slen)) * 100
+            denominator = min(qlen, slen)
+            if denominator == 0:
+                logger.warning(f"Zero length detected (qlen={qlen}, slen={slen}) for hit {aro}; skipping")
+                continue
+            coverage = (int(fields[3]) / denominator) * 100
             if pident >= min_identity and coverage >= min_coverage:
                 if aro in gene_mappings:
                     results.append({
@@ -212,8 +226,8 @@ def plot_results(df, output_file):
         y="Percent_Identity",
         color="Antibiotic",
         title="Top 10 Resistance Genes",
-        height=600,  # Increased height
-        width=800,   # Set a reasonable width
+        height=600,
+        width=800,
         text="Percent_Identity",
         hover_data=["Coverage", "Evalue"],
         labels={"Percent_Identity": "% Identity"}
@@ -221,11 +235,11 @@ def plot_results(df, output_file):
     fig.update_traces(texttemplate="%{text:.1f}%", textposition="auto")
     fig.update_layout(
         xaxis_tickangle=45,
-        font=dict(size=14),  # Increase font size for readability
+        font=dict(size=14),
         title_font_size=18,
         xaxis_title_font_size=16,
         yaxis_title_font_size=16,
-        margin=dict(l=50, r=50, t=80, b=100)  # Adjust margins for better spacing
+        margin=dict(l=50, r=50, t=80, b=100)
     )
     html_file = output_file.replace(".png", ".html")
     try:
@@ -239,8 +253,8 @@ def plot_results(df, output_file):
         logger.info(f"Generated PNG plot: {output_file}")
     except Exception as e:
         logger.warning(f"Failed to generate PNG plot: {str(e)}. HTML plot available at {html_file}")
-    return fig  # Return the figure for Streamlit rendering
-    
+    return fig
+
 def save_results(df, output_file):
     """Save results to CSV and summary table."""
     output_file = os.path.abspath(output_file)
@@ -284,17 +298,15 @@ def main(fasta_file=None):
     
     check_environment()
     validate_fasta(fasta_file)
-    card_tsv = os.path.abspath("card_database/aro_index.tsv")
-    db_path = os.path.abspath("card_database/card_db")
+    card_tsv = os.path.abspath(os.path.join(CARD_DATABASE_PATH, "aro_index.tsv"))
+    db_path = os.path.abspath(os.path.join(CARD_DATABASE_PATH, "card_db"))
     validate_card_database(card_tsv, db_path)
     
     base_name = sanitize_filename(os.path.splitext(os.path.basename(fasta_file))[0])
-    output_dir = os.path.expanduser("~/dfu_outputs")
-    blast_output = os.path.join(output_dir, f"{base_name}_blast_results.txt")
-    csv_output = os.path.join(output_dir, f"{base_name}_report.csv")
-    plot_output = os.path.join(output_dir, f"{base_name}_plot.png")
+    blast_output = os.path.join(OUTPUT_DIR, f"{base_name}_blast_results.txt")
+    csv_output = os.path.join(OUTPUT_DIR, f"{base_name}_report.csv")
+    plot_output = os.path.join(OUTPUT_DIR, f"{base_name}_plot.png")
     
-    os.makedirs(output_dir, exist_ok=True)
     gene_mappings = load_gene_mappings(card_tsv)
     run_blast(fasta_file, db_path, blast_output)
     df = parse_blast_results(blast_output, gene_mappings, min_identity=90.0, min_coverage=80.0)
@@ -304,7 +316,7 @@ def main(fasta_file=None):
         plot_results(df, plot_output)
     else:
         logger.warning("No resistance genes detected with thresholds (90% identity, 80% coverage).")
-        raise ValueError("No resistance genes detected with thresholds (90% identity, 80% coverage). Check FASTA file, CARD database, or BLAST output in ~/dfu_outputs/analysis.log.")
+        raise ValueError(f"No resistance genes detected with thresholds (90% identity, 80% coverage). Check logs in {OUTPUT_DIR}/analysis.log.")
 
 if __name__ == "__main__":
     main()
